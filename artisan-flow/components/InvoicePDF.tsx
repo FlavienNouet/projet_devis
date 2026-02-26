@@ -15,6 +15,7 @@ interface InvoiceData {
   quoteNumber?: string;
   issueDate?: string;
   documentType?: 'quote' | 'invoice';
+  signatureName?: string;
 }
 
 const styles = StyleSheet.create({
@@ -30,7 +31,11 @@ const styles = StyleSheet.create({
   priceCol: { flex: 1, textAlign: 'right' },
   totalSection: { marginTop: 40, alignItems: 'flex-end' },
   totalBox: { width: 150, borderTopWidth: 2, borderTopColor: '#111827', paddingTop: 10 },
-  totalText: { fontSize: 16, fontWeight: 'bold' }
+  totalText: { fontSize: 16, fontWeight: 'bold' },
+  signatureSection: { marginTop: 40, borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 16 },
+  signatureTitle: { fontSize: 10, color: '#6B7280', textTransform: 'uppercase', marginBottom: 8 },
+  signatureName: { fontSize: 12, fontWeight: 'bold', marginBottom: 6 },
+  signatureLine: { fontSize: 11, color: '#6B7280' },
 });
 
 export const InvoicePDF = ({ data }: { data: InvoiceData }) => (
@@ -83,6 +88,12 @@ export const InvoicePDF = ({ data }: { data: InvoiceData }) => (
             <Text style={styles.totalText}>{(data.total * 1.2).toLocaleString('fr-FR')} €</Text>
           </View>
         </View>
+      </View>
+
+      <View style={styles.signatureSection}>
+        <Text style={styles.signatureTitle}>Bon pour accord - signature client</Text>
+        <Text style={styles.signatureName}>{data.signatureName || 'Non renseignée'}</Text>
+        <Text style={styles.signatureLine}>Signature: ____________________________</Text>
       </View>
     </Page>
   </Document>

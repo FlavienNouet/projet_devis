@@ -27,6 +27,7 @@ export interface StoredInvoice {
   locationAddress?: string;
   locationLat?: number;
   locationLng?: number;
+  signatureName?: string;
   createdAt: string;
 }
 
@@ -105,6 +106,9 @@ export const listInvoicesByUser = async (userId: string): Promise<StoredInvoice[
         : undefined,
       locationLng: typeof (invoice as { locationLng?: unknown }).locationLng === 'number'
         ? (invoice as { locationLng?: number }).locationLng
+        : undefined,
+      signatureName: typeof (invoice as { signatureName?: unknown }).signatureName === 'string'
+        ? (invoice as { signatureName?: string }).signatureName
         : undefined,
     }))
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));

@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { Plus, Download, Trash2, FileText, AlertCircle, LogOut, UserRound, History, Users, MapPin } from 'lucide-react';
+import { Plus, Download, Trash2, FileText, AlertCircle, LogOut, UserRound, History, Users, MapPin, BarChart3 } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
 import { InvoicePDF } from '@/components/InvoicePDF';
 
 const PDFDownloadLink = dynamic(
@@ -60,6 +61,7 @@ interface InvoiceRecord {
   locationAddress?: string;
   locationLat?: number;
   locationLng?: number;
+  signatureName?: string;
   createdAt: string;
 }
 
@@ -72,13 +74,14 @@ interface AddressSuggestion {
 }
 
 type AuthMode = 'login' | 'register';
-type ActiveTab = 'home' | 'quote' | 'history' | 'invoices' | 'clients' | 'map' | 'profile';
+type ActiveTab = 'home' | 'analytics' | 'quote' | 'history' | 'invoices' | 'clients' | 'map' | 'profile';
 
 export default function CreateInvoice() {
   const [isClient, setIsClient] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [clientName, setClientName] = useState('');
+  const [quoteSignatureName, setQuoteSignatureName] = useState('');
   const [quoteLocation, setQuoteLocation] = useState('');
   const [quoteLocationLat, setQuoteLocationLat] = useState<number | null>(null);
   const [quoteLocationLng, setQuoteLocationLng] = useState<number | null>(null);
@@ -118,6 +121,7 @@ export default function CreateInvoice() {
   const [deletingInvoiceId, setDeletingInvoiceId] = useState('');
   const [updatingInvoiceId, setUpdatingInvoiceId] = useState('');
   const [updatingPaymentInvoiceId, setUpdatingPaymentInvoiceId] = useState('');
+  const [isExportingInvoicesCsv, setIsExportingInvoicesCsv] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
   const [historySearch, setHistorySearch] = useState('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'sent' | 'accepted' | 'rejected'>('all');
@@ -427,6 +431,63 @@ export default function CreateInvoice() {
     };
   }, [invoiceDocuments]);
 
+  const monthlyRevenueData = useMemo(() => {
+    const monthFormatter = new Intl.DateTimeFormat('fr-FR', { month: 'short' });
+    const now = new Date();
+    const monthBuckets = Array.from({ length: 6 }, (_, index) => {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+      return {
+        key: `${monthDate.getFullYear()}-${monthDate.getMonth()}`,
+        label: monthFormatter.format(monthDate),
+        billed: 0,
+        collected: 0,
+      };
+    });
+
+    const monthMap = new Map(monthBuckets.map((month) => [month.key, month]));
+
+    for (const invoice of invoiceDocuments) {
+      const referenceDate = new Date(invoice.createdAt);
+
+      if (Number.isNaN(referenceDate.getTime())) {
+        continue;
+      }
+
+      const key = `${referenceDate.getFullYear()}-${referenceDate.getMonth()}`;
+      const bucket = monthMap.get(key);
+
+      if (!bucket) {
+        continue;
+      }
+
+      bucket.billed += invoice.total;
+
+      if (invoice.paymentStatus === 'paid') {
+        bucket.collected += invoice.total;
+      } else if (invoice.paymentStatus === 'partial') {
+        bucket.collected += Math.min(invoice.total, Math.max(0, invoice.paidAmount ?? 0));
+      }
+    }
+
+    return monthBuckets;
+  }, [invoiceDocuments]);
+
+  const quoteStatusPieData = useMemo(() => {
+    return [
+      { name: 'En attente', value: quoteStats.sent, color: '#3b82f6' },
+      { name: 'Acceptés', value: quoteStats.accepted, color: '#10b981' },
+      { name: 'Refusés', value: quoteStats.rejected, color: '#ef4444' },
+    ].filter((entry) => entry.value > 0);
+  }, [quoteStats]);
+
+  const invoiceStatusPieData = useMemo(() => {
+    return [
+      { name: 'À payer', value: invoiceStats.unpaid, color: '#3b82f6' },
+      { name: 'Partiellement payées', value: invoiceStats.partial, color: '#f59e0b' },
+      { name: 'Payées', value: invoiceStats.paid, color: '#10b981' },
+    ].filter((entry) => entry.value > 0);
+  }, [invoiceStats]);
+
   const filteredInvoiceDocuments = useMemo(() => {
     const query = globalSearch.trim().toLowerCase();
 
@@ -498,6 +559,7 @@ export default function CreateInvoice() {
           credentials: 'include',
           body: JSON.stringify({
             clientName: clientName.trim(),
+            signatureName: quoteSignatureName.trim(),
             clientId: selectedClientId,
             locationAddress: quoteLocation.trim(),
             locationLat: quoteLocationLat,
@@ -516,6 +578,7 @@ export default function CreateInvoice() {
 
         await loadDashboardData();
         resetQuoteMeta();
+        setQuoteSignatureName('');
       } catch {
         setDashboardError('Erreur réseau pendant la sauvegarde du devis.');
       } finally {
@@ -533,6 +596,7 @@ export default function CreateInvoice() {
     items,
     loadDashboardData,
     quoteNumber,
+    quoteSignatureName,
     quoteLocation,
     quoteLocationLat,
     quoteLocationLng,
@@ -645,6 +709,7 @@ export default function CreateInvoice() {
       } finally {
         setCurrentUser(null);
         setClientName('');
+        setQuoteSignatureName('');
         setQuoteLocation('');
         setQuoteLocationLat(null);
         setQuoteLocationLng(null);
@@ -997,6 +1062,51 @@ export default function CreateInvoice() {
     runConvert();
   }, [loadDashboardData, resetDashboardMessages]);
 
+  const handleExportInvoicesCsv = useCallback(() => {
+    resetDashboardMessages();
+
+    const runExport = async () => {
+      try {
+        setIsExportingInvoicesCsv(true);
+
+        const response = await fetch('/api/invoices/export', {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}));
+          setDashboardError(result.error || 'Impossible d\'exporter les factures en CSV.');
+          return;
+        }
+
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+
+        const contentDisposition = response.headers.get('content-disposition') || '';
+        const filenameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+        const downloadName = filenameMatch?.[1] || `factures_${new Date().toISOString().slice(0, 10)}.csv`;
+
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = downloadName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+
+        setDashboardSuccess('Export CSV téléchargé.');
+      } catch {
+        setDashboardError('Erreur réseau pendant l\'export CSV.');
+      } finally {
+        setIsExportingInvoicesCsv(false);
+      }
+    };
+
+    runExport();
+  }, [resetDashboardMessages]);
+
   const handleSaveProfile = useCallback(() => {
     resetDashboardMessages();
 
@@ -1170,6 +1280,8 @@ export default function CreateInvoice() {
   const activeTabTitle =
     activeTab === 'home'
       ? 'Accueil'
+      : activeTab === 'analytics'
+        ? 'Dashboard+'
       : activeTab === 'quote'
       ? 'Nouveau Devis'
       : activeTab === 'history'
@@ -1185,6 +1297,8 @@ export default function CreateInvoice() {
   const activeTabSubtitle =
     activeTab === 'home'
       ? 'Vue rapide de vos devis et factures'
+      : activeTab === 'analytics'
+        ? 'Graphiques de suivi et répartition de vos performances'
       : activeTab === 'quote'
       ? 'Créez votre devis professionnel en quelques clics'
       : activeTab === 'history'
@@ -1200,6 +1314,8 @@ export default function CreateInvoice() {
   const quickSearchPlaceholder =
     activeTab === 'home'
       ? 'Recherche globale...'
+      : activeTab === 'analytics'
+        ? 'Recherche globale dashboard...'
       : activeTab === 'history'
       ? 'Rechercher un devis, client ou numéro...'
       : activeTab === 'invoices'
@@ -1247,6 +1363,21 @@ export default function CreateInvoice() {
             >
               <FileText size={18} />
               Home
+            </button>
+
+            <button
+              onClick={() => {
+                resetDashboardMessages();
+                setActiveTab('analytics');
+              }}
+              className={`w-full px-4 py-3 rounded-xl border font-semibold transition-all flex items-center gap-3 ${
+                activeTab === 'analytics'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200/50'
+                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <BarChart3 size={18} />
+              Dashboard+
             </button>
 
             <button
@@ -1513,6 +1644,97 @@ export default function CreateInvoice() {
             </div>
           )}
 
+          {activeTab === 'analytics' && (
+            <div className="space-y-8">
+              <div className="border border-gray-200 bg-white rounded-2xl p-5">
+                <h2 className="text-2xl font-black text-gray-900 mb-4">Évolution mensuelle</h2>
+                <p className="text-sm text-gray-500 mb-4">Comparaison du facturé et de l&apos;encaissé sur les 6 derniers mois.</p>
+
+                <div className="h-[360px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={monthlyRevenueData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis dataKey="label" stroke="#6b7280" />
+                      <YAxis stroke="#6b7280" />
+                      <Tooltip
+                        formatter={(value: number) => value.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                      />
+                      <Legend />
+                      <Bar dataKey="billed" name="Facturé" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                      <Bar dataKey="collected" name="Encaissé" fill="#10b981" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className="border border-gray-200 bg-white rounded-2xl p-5">
+                  <h2 className="text-2xl font-black text-gray-900 mb-4">Répartition devis</h2>
+
+                  {quoteStatusPieData.length === 0 ? (
+                    <div className="text-gray-600 bg-gray-50 border border-gray-200 rounded-2xl p-6">
+                      Aucun devis disponible.
+                    </div>
+                  ) : (
+                    <div className="h-[320px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Tooltip />
+                          <Legend />
+                          <Pie
+                            data={quoteStatusPieData}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={110}
+                            label
+                          >
+                            {quoteStatusPieData.map((entry) => (
+                              <Cell key={entry.name} fill={entry.color} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border border-gray-200 bg-white rounded-2xl p-5">
+                  <h2 className="text-2xl font-black text-gray-900 mb-4">Répartition factures</h2>
+
+                  {invoiceStatusPieData.length === 0 ? (
+                    <div className="text-gray-600 bg-gray-50 border border-gray-200 rounded-2xl p-6">
+                      Aucune facture disponible.
+                    </div>
+                  ) : (
+                    <div className="h-[320px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Tooltip />
+                          <Legend />
+                          <Pie
+                            data={invoiceStatusPieData}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={110}
+                            label
+                          >
+                            {invoiceStatusPieData.map((entry) => (
+                              <Cell key={entry.name} fill={entry.color} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'quote' && (
             <>
               <div className="grid gap-8 mb-12">
@@ -1606,6 +1828,16 @@ export default function CreateInvoice() {
                       }
                     }}
                     autoFocus
+                  />
+                </div>
+
+                <div className="group">
+                  <label className="block text-sm font-bold text-gray-700 mb-3">Signature client (bon pour accord)</label>
+                  <input
+                    placeholder="Ex: Jean Dupont"
+                    className="w-full p-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white text-gray-900 placeholder-gray-400"
+                    value={quoteSignatureName}
+                    onChange={(event) => setQuoteSignatureName(event.target.value)}
                   />
                 </div>
               </div>
@@ -1712,6 +1944,7 @@ export default function CreateInvoice() {
                         quoteNumber,
                         issueDate,
                         documentType: 'quote',
+                        signatureName: quoteSignatureName.trim(),
                       }}
                     />
                   }
@@ -1826,6 +2059,7 @@ export default function CreateInvoice() {
                                       quoteNumber: invoice.quoteNumber,
                                       issueDate: invoice.issueDate,
                                       documentType: invoice.documentType,
+                                      signatureName: invoice.signatureName,
                                     }}
                                   />
                                 }
@@ -1887,7 +2121,16 @@ export default function CreateInvoice() {
 
           {activeTab === 'invoices' && (
             <div>
-              <h2 className="text-2xl font-black text-gray-900 mb-6">Historique des factures</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                <h2 className="text-2xl font-black text-gray-900">Historique des factures</h2>
+                <button
+                  onClick={handleExportInvoicesCsv}
+                  disabled={isExportingInvoicesCsv || invoiceDocuments.length === 0}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm disabled:opacity-60"
+                >
+                  {isExportingInvoicesCsv ? 'Export...' : 'Exporter CSV'}
+                </button>
+              </div>
 
               {filteredInvoiceDocuments.length === 0 ? (
                 <div className="text-gray-600 bg-gray-50 border border-gray-200 rounded-2xl p-6">
@@ -1939,6 +2182,7 @@ export default function CreateInvoice() {
                                 quoteNumber: invoice.quoteNumber,
                                 issueDate: invoice.issueDate,
                                 documentType: 'invoice',
+                                signatureName: invoice.signatureName,
                               }}
                             />
                           }

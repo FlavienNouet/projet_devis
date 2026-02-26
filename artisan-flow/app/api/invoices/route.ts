@@ -28,6 +28,7 @@ export async function POST(request: Request) {
     const clientId = typeof body.clientId === 'string' ? body.clientId : '';
     const quoteNumber = typeof body.quoteNumber === 'string' ? body.quoteNumber : '0000';
     const issueDate = typeof body.issueDate === 'string' ? body.issueDate : new Intl.DateTimeFormat('fr-FR').format(new Date());
+    const signatureName = typeof body.signatureName === 'string' ? body.signatureName.trim() : '';
     const locationAddress = typeof body.locationAddress === 'string' ? body.locationAddress.trim() : '';
     const locationLat = typeof body.locationLat === 'number' && Number.isFinite(body.locationLat)
       ? body.locationLat
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
       locationAddress,
       locationLat: coordinates?.lat,
       locationLng: coordinates?.lng,
+      signatureName,
       createdAt: new Date().toISOString(),
     };
 

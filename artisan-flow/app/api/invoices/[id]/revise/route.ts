@@ -82,6 +82,7 @@ export async function POST(request: Request, context: RouteContext) {
       locationAddress: sourceQuote.locationAddress,
       locationLat: sourceQuote.locationLat,
       locationLng: sourceQuote.locationLng,
+      signatureName: sourceQuote.signatureName,
       createdAt: new Date().toISOString(),
     };
 

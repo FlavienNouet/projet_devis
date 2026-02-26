@@ -195,6 +195,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         locationAddress: invoice.locationAddress,
         locationLat: invoice.locationLat,
         locationLng: invoice.locationLng,
+        signatureName: invoice.signatureName,
         createdAt: new Date().toISOString(),
       };
 
