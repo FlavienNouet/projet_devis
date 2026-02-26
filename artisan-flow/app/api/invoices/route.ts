@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createInvoice, listInvoicesByUser, type StoredInvoiceItem } from '@/lib/invoice-store';
 import { getSessionUserOrNull } from '@/lib/auth-server';
+import { geocodeAddress } from '@/lib/geocoding';
 
 export async function GET() {
   const sessionUser = await getSessionUserOrNull();
@@ -27,6 +28,13 @@ export async function POST(request: Request) {
     const clientId = typeof body.clientId === 'string' ? body.clientId : '';
     const quoteNumber = typeof body.quoteNumber === 'string' ? body.quoteNumber : '0000';
     const issueDate = typeof body.issueDate === 'string' ? body.issueDate : new Intl.DateTimeFormat('fr-FR').format(new Date());
+    const locationAddress = typeof body.locationAddress === 'string' ? body.locationAddress.trim() : '';
+    const locationLat = typeof body.locationLat === 'number' && Number.isFinite(body.locationLat)
+      ? body.locationLat
+      : null;
+    const locationLng = typeof body.locationLng === 'number' && Number.isFinite(body.locationLng)
+      ? body.locationLng
+      : null;
 
     const rawItems: unknown[] = Array.isArray(body.items) ? body.items : [];
     const items: StoredInvoiceItem[] = rawItems
@@ -46,6 +54,9 @@ export async function POST(request: Request) {
     }
 
     const total = items.reduce((accumulator: number, item: StoredInvoiceItem) => accumulator + item.prix * item.qty, 0);
+    const coordinates = locationLat !== null && locationLng !== null
+      ? { lat: locationLat, lng: locationLng }
+      : await geocodeAddress(locationAddress);
 
     const invoice = {
       id: crypto.randomUUID(),
@@ -56,6 +67,11 @@ export async function POST(request: Request) {
       total,
       quoteNumber,
       issueDate,
+      status: 'sent' as const,
+      documentType: 'quote' as const,
+      locationAddress,
+      locationLat: coordinates?.lat,
+      locationLng: coordinates?.lng,
       createdAt: new Date().toISOString(),
     };
 

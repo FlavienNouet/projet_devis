@@ -37,6 +37,7 @@ yarn-error.log*
 /data/users.json
 /data/clients.json
 /data/invoices.json
+/data/numbering.json
 
 # vercel
 .vercel

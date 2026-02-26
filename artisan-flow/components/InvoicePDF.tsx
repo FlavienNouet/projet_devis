@@ -14,6 +14,7 @@ interface InvoiceData {
   siret?: string;
   quoteNumber?: string;
   issueDate?: string;
+  documentType?: 'quote' | 'invoice';
 }
 
 const styles = StyleSheet.create({
@@ -37,7 +38,7 @@ export const InvoicePDF = ({ data }: { data: InvoiceData }) => (
     <Page size="A4" style={styles.page}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>DEVIS</Text>
+          <Text style={styles.title}>{data.documentType === 'invoice' ? 'FACTURE' : 'DEVIS'}</Text>
           <Text style={{ marginTop: 4 }}># {data.quoteNumber || '0000'}</Text>
         </View>
         <View style={{ textAlign: 'right' }}>
