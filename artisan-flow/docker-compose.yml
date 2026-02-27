@@ -1,0 +1,13 @@
+services:
+  artisan-flow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: artisan-flow
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    volumes:
+      - ./prisma/prisma:/app/prisma/prisma
+    restart: unless-stopped

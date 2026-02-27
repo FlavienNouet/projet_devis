@@ -110,6 +110,9 @@ interface InvoiceRecord {
   createdAt: string;
 }
 
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 72;
+
 interface AddressSuggestion {
   label: string;
   postcode: string;
@@ -751,8 +754,13 @@ export default function CreateInvoice() {
         return;
       }
 
-      if (password.trim().length < 8) {
-        setAuthError('Le mot de passe doit contenir au moins 8 caractères.');
+      if (password.trim().length < PASSWORD_MIN_LENGTH) {
+        setAuthError(`Le mot de passe doit contenir au moins ${PASSWORD_MIN_LENGTH} caractères.`);
+        return;
+      }
+
+      if (password.trim().length > PASSWORD_MAX_LENGTH) {
+        setAuthError(`Le mot de passe doit contenir au maximum ${PASSWORD_MAX_LENGTH} caractères.`);
         return;
       }
 
@@ -1451,8 +1459,13 @@ export default function CreateInvoice() {
         return;
       }
 
-      if (profilePassword.trim() && profilePassword.trim().length < 8) {
-        setDashboardError('Le nouveau mot de passe doit contenir au moins 8 caractères.');
+      if (profilePassword.trim() && profilePassword.trim().length < PASSWORD_MIN_LENGTH) {
+        setDashboardError(`Le nouveau mot de passe doit contenir au moins ${PASSWORD_MIN_LENGTH} caractères.`);
+        return;
+      }
+
+      if (profilePassword.trim() && profilePassword.trim().length > PASSWORD_MAX_LENGTH) {
+        setDashboardError(`Le nouveau mot de passe doit contenir au maximum ${PASSWORD_MAX_LENGTH} caractères.`);
         return;
       }
 
@@ -1509,102 +1522,132 @@ export default function CreateInvoice() {
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-4 md:p-8 flex items-center justify-center">
-        <div className="w-full max-w-2xl bg-white/85 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 p-8 md:p-12">
-          <div className="mb-10">
-            <h1 className="text-4xl md:text-5xl font-black bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent mb-3">
-              {authMode === 'register' ? 'Créer votre compte' : 'Connexion'}
-            </h1>
-            <p className="text-gray-500 text-lg">
-              {authMode === 'register'
-                ? 'Renseignez les informations de votre société pour générer vos devis.'
-                : 'Connectez-vous pour continuer vos devis.'}
-            </p>
-          </div>
-
-          <div className="space-y-5">
-            {authMode === 'register' && (
-              <>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Nom de la société <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    placeholder="Ex: Artisan Flow SARL"
-                    className="w-full p-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white/50 text-gray-900 placeholder-gray-400"
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">SIRET</label>
-                  <input
-                    placeholder="Ex: 123 456 789 00012"
-                    className="w-full p-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white/50 text-gray-900 placeholder-gray-400"
-                    value={siret}
-                    onChange={(e) => setSiret(e.target.value)}
-                  />
-                </div>
-              </>
-            )}
-
+        <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+          <section className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-blue-700 to-indigo-700 rounded-3xl p-10 text-white shadow-2xl">
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                Email <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="email"
-                placeholder="vous@entreprise.fr"
-                className="w-full p-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white/50 text-gray-900 placeholder-gray-400"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+              <p className="text-sm font-semibold uppercase tracking-wide text-blue-100 mb-4">Artisan Flow</p>
+              <h1 className="text-4xl font-black leading-tight mb-4">Créez vos devis et factures plus vite</h1>
+              <p className="text-blue-100 text-lg">
+                Gérez vos clients, exportez vos données et suivez votre activité depuis un seul tableau de bord.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-white/10 border border-white/20 px-4 py-3 text-sm font-medium">✓ Génération PDF instantanée</div>
+              <div className="rounded-2xl bg-white/10 border border-white/20 px-4 py-3 text-sm font-medium">✓ Suivi devis, factures et paiements</div>
+              <div className="rounded-2xl bg-white/10 border border-white/20 px-4 py-3 text-sm font-medium">✓ Synchronisation abonnement Stripe</div>
+            </div>
+          </section>
+
+          <section className="w-full bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/60 p-6 md:p-8 lg:p-10">
+            <div className="mb-8">
+              <div className="inline-flex p-1 rounded-2xl bg-gray-100 border border-gray-200 mb-6 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetAuthMessages();
+                    setAuthMode('login');
+                  }}
+                  className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all ${authMode === 'login' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                >
+                  Connexion
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetAuthMessages();
+                    setAuthMode('register');
+                  }}
+                  className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all ${authMode === 'register' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                >
+                  Inscription
+                </button>
+              </div>
+
+              <h2 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent mb-2">
+                {authMode === 'register' ? 'Créer votre compte' : 'Bon retour'}
+              </h2>
+              <p className="text-gray-500 text-base md:text-lg">
+                {authMode === 'register'
+                  ? 'Renseignez les informations de votre société pour démarrer.'
+                  : 'Connectez-vous pour continuer vos devis et factures.'}
+              </p>
             </div>
 
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                Mot de passe <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="password"
-                placeholder="Minimum 8 caractères"
-                className="w-full p-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white/50 text-gray-900 placeholder-gray-400"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+            <div className="space-y-4">
+              {authMode === 'register' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Nom de la société <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      placeholder="Ex: Artisan Flow SARL"
+                      className="w-full h-12 px-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white text-gray-900 placeholder-gray-400"
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">SIRET</label>
+                    <input
+                      placeholder="Ex: 123 456 789 00012"
+                      className="w-full h-12 px-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white text-gray-900 placeholder-gray-400"
+                      value={siret}
+                      onChange={(e) => setSiret(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Email <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="vous@entreprise.fr"
+                  className="w-full h-12 px-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white text-gray-900 placeholder-gray-400"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Mot de passe <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder={`Entre ${PASSWORD_MIN_LENGTH} et ${PASSWORD_MAX_LENGTH} caractères`}
+                  className="w-full h-12 px-4 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white text-gray-900 placeholder-gray-400"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  maxLength={PASSWORD_MAX_LENGTH}
+                />
+              </div>
+
+              {authError && (
+                <div className="text-red-700 bg-red-50 border border-red-200 p-3 rounded-xl text-sm font-medium">
+                  {authError}
+                </div>
+              )}
+
+              {authSuccess && (
+                <div className="text-emerald-700 bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-sm font-medium">
+                  {authSuccess}
+                </div>
+              )}
+
+              <button
+                onClick={authMode === 'register' ? handleRegister : handleLogin}
+                className="w-full h-12 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-blue-200/60 transition-all"
+              >
+                {authMode === 'register' ? 'Créer le compte' : 'Se connecter'}
+              </button>
+
             </div>
-
-            {authError && (
-              <div className="text-red-700 bg-red-50 border border-red-200 p-3 rounded-xl text-sm font-medium">
-                {authError}
-              </div>
-            )}
-
-            {authSuccess && (
-              <div className="text-emerald-700 bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-sm font-medium">
-                {authSuccess}
-              </div>
-            )}
-
-            <button
-              onClick={authMode === 'register' ? handleRegister : handleLogin}
-              className="w-full h-14 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-2xl shadow-xl shadow-blue-200/50 transition-all"
-            >
-              {authMode === 'register' ? 'Créer le compte' : 'Se connecter'}
-            </button>
-
-            <button
-              onClick={() => {
-                resetAuthMessages();
-                setAuthMode((prev) => (prev === 'register' ? 'login' : 'register'));
-              }}
-              className="w-full text-blue-700 hover:text-blue-800 font-semibold py-2"
-            >
-              {authMode === 'register'
-                ? 'Déjà un compte ? Se connecter'
-                : 'Pas encore de compte ? S\'inscrire'}
-            </button>
-          </div>
+          </section>
         </div>
       </main>
     );
@@ -2932,10 +2975,11 @@ export default function CreateInvoice() {
                   <label className="block text-sm font-bold text-gray-700 mb-2">Nouveau mot de passe (optionnel)</label>
                   <input
                     type="password"
-                    placeholder="Minimum 8 caractères"
+                    placeholder={`Entre ${PASSWORD_MIN_LENGTH} et ${PASSWORD_MAX_LENGTH} caractères`}
                     className="w-full p-4 border border-gray-200 rounded-xl bg-white text-gray-900 placeholder-gray-400"
                     value={profilePassword}
                     onChange={(e) => setProfilePassword(e.target.value)}
+                    maxLength={PASSWORD_MAX_LENGTH}
                   />
                 </div>
 

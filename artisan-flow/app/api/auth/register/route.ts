@@ -2,8 +2,28 @@ import bcrypt from 'bcryptjs';
 import { NextResponse } from 'next/server';
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_DURATION_SECONDS } from '@/lib/auth';
 import { createUser, findUserByEmail, getDefaultPlanForNewUser, getDefaultRoleForNewUser } from '@/lib/user-store';
+import { enforceRateLimit } from '@/lib/rate-limit';
+
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 72;
+const REGISTER_WINDOW_MS = 15 * 60 * 1000;
+const REGISTER_MAX_ATTEMPTS = 10;
 
 export async function POST(request: Request) {
+  const rateLimit = enforceRateLimit(request, 'auth-register', REGISTER_MAX_ATTEMPTS, REGISTER_WINDOW_MS);
+
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: `Trop de tentatives. Réessayez dans ${rateLimit.retryAfterSeconds}s.` },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(rateLimit.retryAfterSeconds),
+        },
+      }
+    );
+  }
+
   try {
     const body = await request.json();
 
@@ -16,8 +36,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Champs obligatoires manquants.' }, { status: 400 });
     }
 
-    if (password.length < 8) {
-      return NextResponse.json({ error: 'Le mot de passe doit contenir au moins 8 caractères.' }, { status: 400 });
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      return NextResponse.json({ error: `Le mot de passe doit contenir au moins ${PASSWORD_MIN_LENGTH} caractères.` }, { status: 400 });
+    }
+
+    if (password.length > PASSWORD_MAX_LENGTH) {
+      return NextResponse.json({ error: `Le mot de passe doit contenir au maximum ${PASSWORD_MAX_LENGTH} caractères.` }, { status: 400 });
     }
 
     const existingUser = await findUserByEmail(email);

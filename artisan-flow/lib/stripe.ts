@@ -116,6 +116,10 @@ export const getAppUrlFromRequest = (request: Request) => {
     return envUrl.replace(/\/$/, '');
   }
 
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('NEXT_PUBLIC_APP_URL est manquante en production.');
+  }
+
   const url = new URL(request.url);
   return `${url.protocol}//${url.host}`;
 };

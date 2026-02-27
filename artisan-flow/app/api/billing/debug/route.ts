@@ -4,6 +4,10 @@ import { findUserById } from '@/lib/user-store';
 import { getStripeClient, resolveStripePriceIdForPlan } from '@/lib/stripe';
 
 export async function GET() {
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Not Found' }, { status: 404 });
+  }
+
   const sessionUser = await getSessionUserOrNull();
 
   if (!sessionUser) {

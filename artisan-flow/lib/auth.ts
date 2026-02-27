@@ -14,8 +14,12 @@ export interface SessionUser {
 export const SESSION_COOKIE_NAME = 'artisan_flow_session';
 export const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 7;
 
+if (!process.env.AUTH_SECRET) {
+  throw new Error('AUTH_SECRET doit être défini.');
+}
+
 const sessionSecret = new TextEncoder().encode(
-  process.env.AUTH_SECRET || 'change-me-in-production-artisan-flow'
+  process.env.AUTH_SECRET
 );
 
 if (process.env.NODE_ENV === 'production' && !process.env.AUTH_SECRET) {

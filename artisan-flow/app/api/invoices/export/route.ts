@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUserOrNull } from '@/lib/auth-server';
 import { listInvoicesByUser } from '@/lib/invoice-store';
+import { findUserById } from '@/lib/user-store';
 
 const formatNumber = (value: number) => value.toFixed(2);
 
@@ -23,6 +24,16 @@ export async function GET() {
 
   if (!sessionUser) {
     return NextResponse.json({ error: 'Non authentifié.' }, { status: 401 });
+  }
+
+  const persistedUser = await findUserById(sessionUser.id);
+
+  if (!persistedUser) {
+    return NextResponse.json({ error: 'Utilisateur introuvable.' }, { status: 404 });
+  }
+
+  if ((persistedUser.plan ?? 'free') === 'free') {
+    return NextResponse.json({ error: 'L\'export CSV est réservé au plan Pro.' }, { status: 403 });
   }
 
   const allDocuments = await listInvoicesByUser(sessionUser.id);

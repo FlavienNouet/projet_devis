@@ -2,8 +2,26 @@ import bcrypt from 'bcryptjs';
 import { NextResponse } from 'next/server';
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_DURATION_SECONDS } from '@/lib/auth';
 import { findUserByEmail } from '@/lib/user-store';
+import { enforceRateLimit } from '@/lib/rate-limit';
+
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
 
 export async function POST(request: Request) {
+  const rateLimit = enforceRateLimit(request, 'auth-login', LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS);
+
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: `Trop de tentatives. Réessayez dans ${rateLimit.retryAfterSeconds}s.` },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(rateLimit.retryAfterSeconds),
+        },
+      }
+    );
+  }
+
   try {
     const body = await request.json();
 

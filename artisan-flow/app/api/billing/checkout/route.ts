@@ -78,9 +78,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ url: checkoutSession.url });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Impossible de créer la session de paiement.';
-    const status = message.includes('manquante') ? 500 : 400;
+    console.error('Erreur /api/billing/checkout:', error);
 
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json(
+      { error: 'Impossible de créer la session de paiement. Vérifiez la configuration Stripe.' },
+      { status: 500 }
+    );
   }
 }

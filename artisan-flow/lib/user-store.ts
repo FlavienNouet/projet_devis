@@ -28,9 +28,9 @@ interface PublicUser {
   createdAt: string;
 }
 
-const FIXED_ADMIN_EMAIL = 'admin@admin.fr';
-const FIXED_ADMIN_PASSWORD = 'admin';
-const FIXED_ADMIN_COMPANY = 'Administrateur';
+const BOOTSTRAP_ADMIN_EMAIL = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
+const BOOTSTRAP_ADMIN_PASSWORD = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+const BOOTSTRAP_ADMIN_COMPANY = process.env.BOOTSTRAP_ADMIN_COMPANY?.trim() || 'Administrateur';
 
 let ensureSingleAdminPromise: Promise<void> | null = null;
 
@@ -81,19 +81,23 @@ const ensureSingleAdminAccount = async () => {
   }
 
   ensureSingleAdminPromise = (async () => {
+    if (!BOOTSTRAP_ADMIN_EMAIL || !BOOTSTRAP_ADMIN_PASSWORD) {
+      return;
+    }
+
     const existingAdmin = await prisma.user.findUnique({
-      where: { email: FIXED_ADMIN_EMAIL },
+      where: { email: BOOTSTRAP_ADMIN_EMAIL },
     });
 
-    const adminPasswordHash = await bcrypt.hash(FIXED_ADMIN_PASSWORD, 12);
-
     if (!existingAdmin) {
+      const adminPasswordHash = await bcrypt.hash(BOOTSTRAP_ADMIN_PASSWORD, 12);
+
       await prisma.user.create({
         data: {
           id: crypto.randomUUID(),
-          companyName: FIXED_ADMIN_COMPANY,
+          companyName: BOOTSTRAP_ADMIN_COMPANY,
           siret: '',
-          email: FIXED_ADMIN_EMAIL,
+          email: BOOTSTRAP_ADMIN_EMAIL,
           passwordHash: adminPasswordHash,
           role: 'admin',
           plan: 'team',
@@ -101,28 +105,14 @@ const ensureSingleAdminAccount = async () => {
           createdAt: new Date(),
         },
       });
-    } else {
+    } else if (normalizeRole(existingAdmin.role) !== 'admin') {
       await prisma.user.update({
         where: { id: existingAdmin.id },
         data: {
           role: 'admin',
-          passwordHash: adminPasswordHash,
-          plan: 'team',
-          billingStatus: 'active',
         },
       });
     }
-
-    await prisma.user.updateMany({
-      where: {
-        email: {
-          not: FIXED_ADMIN_EMAIL,
-        },
-      },
-      data: {
-        role: 'user',
-      },
-    });
   })()
     .finally(() => {
       ensureSingleAdminPromise = null;
@@ -176,12 +166,12 @@ export const findUserById = async (id: string): Promise<StoredUser | undefined> 
 
 export const getDefaultRoleForNewUser = async (email: string): Promise<'admin' | 'user'> => {
   await ensureSingleAdminAccount();
-  return email.trim().toLowerCase() === FIXED_ADMIN_EMAIL ? 'admin' : 'user';
+  return BOOTSTRAP_ADMIN_EMAIL && email.trim().toLowerCase() === BOOTSTRAP_ADMIN_EMAIL ? 'admin' : 'user';
 };
 
 export const getDefaultPlanForNewUser = async (email: string): Promise<BillingPlan> => {
   await ensureSingleAdminAccount();
-  return email.trim().toLowerCase() === FIXED_ADMIN_EMAIL ? 'team' : 'free';
+  return BOOTSTRAP_ADMIN_EMAIL && email.trim().toLowerCase() === BOOTSTRAP_ADMIN_EMAIL ? 'team' : 'free';
 };
 
 export const listPublicUsers = async (): Promise<PublicUser[]> => {
@@ -211,12 +201,7 @@ export const updateUser = async (
     data: {
       companyName: update.companyName,
       siret: update.siret,
-      passwordHash: existingUser.email === FIXED_ADMIN_EMAIL
-        ? await bcrypt.hash(FIXED_ADMIN_PASSWORD, 12)
-        : update.passwordHash,
-      role: existingUser.email === FIXED_ADMIN_EMAIL ? 'admin' : 'user',
-      plan: existingUser.email === FIXED_ADMIN_EMAIL ? 'team' : existingUser.plan,
-      billingStatus: existingUser.email === FIXED_ADMIN_EMAIL ? 'active' : existingUser.billingStatus,
+      passwordHash: update.passwordHash,
     },
   });
 
@@ -243,7 +228,7 @@ export const deleteUserByIdForAdmin = async (
     return { success: false, reason: 'not-found' };
   }
 
-  if (targetUser.email.toLowerCase() === FIXED_ADMIN_EMAIL) {
+  if (BOOTSTRAP_ADMIN_EMAIL && targetUser.email.toLowerCase() === BOOTSTRAP_ADMIN_EMAIL) {
     return { success: false, reason: 'protected' };
   }
 

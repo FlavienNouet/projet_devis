@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:reset": "npm run db:reset && npm run dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node .next/standalone/server.js",
     "lint": "eslint",
+    "db:reset": "prisma db push --force-reset",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:migrate:json": "node scripts/migrate-json-to-db.cjs"

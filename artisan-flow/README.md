@@ -10,10 +10,13 @@ Application Next.js pour créer des devis/factures PDF avec authentification (in
 npm install
 ```
 
-2. Créer un fichier `.env.local` à la racine du projet :
+2. Créer un fichier `.env.local` à la racine du projet (vous pouvez partir de `.env.example`) :
 
 ```env
 AUTH_SECRET=votre-cle-secrete-tres-longue-et-aleatoire
+BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+BOOTSTRAP_ADMIN_PASSWORD=mot-de-passe-admin-fort
+BOOTSTRAP_ADMIN_COMPANY=Administrateur
 STRIPE_SECRET_KEY=sk_test_xxx
 STRIPE_WEBHOOK_SECRET=whsec_xxx
 STRIPE_PRICE_PRO_MONTHLY=price_xxx
@@ -23,6 +26,8 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
 `STRIPE_PRODUCT_PRO` est optionnel : s'il est défini, l'application peut retrouver automatiquement les prix Pro mensuel/annuel du produit Stripe.
+
+`BOOTSTRAP_ADMIN_*` est optionnel : s'il est défini, l'application peut créer un compte admin initial au premier démarrage.
 
 3. Initialiser la base SQLite (Prisma) :
 
@@ -55,7 +60,7 @@ npm run dev
 
 - Schéma Prisma : `prisma/schema.prisma`
 - Client Prisma partagé : `lib/prisma.ts`
-- Base locale : `prisma/dev.db`
+- Base locale : `prisma/prisma/dev.db`
 - Script migration JSON -> DB : `scripts/migrate-json-to-db.cjs`
 
 ## API disponibles
@@ -83,3 +88,11 @@ stripe listen --forward-to localhost:3000/api/billing/webhook
 ```bash
 npm run lint
 ```
+
+## Mode local uniquement
+
+Ce projet est configuré pour un usage **local/dev** uniquement.
+
+- URL locale recommandée : `NEXT_PUBLIC_APP_URL=http://localhost:3000`
+- Variables Stripe en mode test (`sk_test`, `whsec` du `stripe listen` local)
+- Lancement : `npm run dev`

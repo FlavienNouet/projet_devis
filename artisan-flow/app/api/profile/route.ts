@@ -4,6 +4,9 @@ import { createSessionToken, SESSION_COOKIE_NAME, SESSION_DURATION_SECONDS } fro
 import { getSessionUserOrNull } from '@/lib/auth-server';
 import { updateUser } from '@/lib/user-store';
 
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 72;
+
 export async function GET() {
   const sessionUser = await getSessionUserOrNull();
 
@@ -38,8 +41,12 @@ export async function PATCH(request: Request) {
     };
 
     if (password.trim()) {
-      if (password.trim().length < 8) {
-        return NextResponse.json({ error: 'Le mot de passe doit contenir au moins 8 caractères.' }, { status: 400 });
+      if (password.trim().length < PASSWORD_MIN_LENGTH) {
+        return NextResponse.json({ error: `Le mot de passe doit contenir au moins ${PASSWORD_MIN_LENGTH} caractères.` }, { status: 400 });
+      }
+
+      if (password.trim().length > PASSWORD_MAX_LENGTH) {
+        return NextResponse.json({ error: `Le mot de passe doit contenir au maximum ${PASSWORD_MAX_LENGTH} caractères.` }, { status: 400 });
       }
 
       updatePayload.passwordHash = await bcrypt.hash(password.trim(), 12);
