@@ -73,6 +73,7 @@ export async function POST(request: Request, context: RouteContext) {
       clientName: sourceQuote.clientName,
       items: sourceQuote.items,
       total: revisedTotal,
+      vatRate: sourceQuote.vatRate ?? 20,
       quoteNumber: revisedQuoteNumber,
       issueDate: new Intl.DateTimeFormat('fr-FR').format(new Date()),
       status: 'sent' as const,

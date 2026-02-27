@@ -29,6 +29,9 @@ export async function POST(request: Request) {
       companyName: user.companyName,
       siret: user.siret,
       email: user.email,
+      role: user.role === 'admin' ? 'admin' as const : 'user' as const,
+      plan: user.plan ?? 'free' as const,
+      billingStatus: user.billingStatus ?? 'inactive' as const,
     };
 
     const token = await createSessionToken(sessionUser);
@@ -45,7 +48,24 @@ export async function POST(request: Request) {
     });
 
     return response;
-  } catch {
-    return NextResponse.json({ error: 'Erreur serveur pendant la connexion.' }, { status: 500 });
+  } catch (error) {
+    console.error('Erreur login /api/auth/login:', error);
+
+    const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+    const debugHint =
+      errorMessage.toLowerCase().includes('prisma')
+      || errorMessage.toLowerCase().includes('column')
+      || errorMessage.toLowerCase().includes('database')
+        ? 'Vérifiez la synchronisation Prisma: npm run db:push puis redémarrez le serveur.'
+        : undefined;
+
+    return NextResponse.json(
+      {
+        error: 'Erreur serveur pendant la connexion.',
+        detail: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
+        hint: process.env.NODE_ENV === 'development' ? debugHint : undefined,
+      },
+      { status: 500 }
+    );
   }
 }

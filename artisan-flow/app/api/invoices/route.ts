@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
-import { createInvoice, listInvoicesByUser, type StoredInvoiceItem } from '@/lib/invoice-store';
+import { countInvoicesByUserSince, createInvoice, listInvoicesByUser, type StoredInvoiceItem } from '@/lib/invoice-store';
 import { getSessionUserOrNull } from '@/lib/auth-server';
 import { geocodeAddress } from '@/lib/geocoding';
+import { findUserById } from '@/lib/user-store';
+import { getPlanDefinition } from '@/lib/plans';
 
 export async function GET() {
   const sessionUser = await getSessionUserOrNull();
@@ -22,6 +24,30 @@ export async function POST(request: Request) {
   }
 
   try {
+    const persistedUser = await findUserById(sessionUser.id);
+
+    if (!persistedUser) {
+      return NextResponse.json({ error: 'Utilisateur introuvable.' }, { status: 404 });
+    }
+
+    const currentPlan = persistedUser.plan ?? 'free';
+    const planDefinition = getPlanDefinition(currentPlan);
+
+    if (planDefinition.maxInvoicesPerMonth !== null) {
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+
+      const currentMonthDocuments = await countInvoicesByUserSince(sessionUser.id, monthStart);
+
+      if (currentMonthDocuments >= planDefinition.maxInvoicesPerMonth) {
+        return NextResponse.json(
+          { error: `Limite atteinte: ${planDefinition.maxInvoicesPerMonth} documents / mois sur le plan Free.` },
+          { status: 403 }
+        );
+      }
+    }
+
     const body = await request.json();
 
     const clientName = typeof body.clientName === 'string' ? body.clientName.trim() : '';
@@ -29,6 +55,10 @@ export async function POST(request: Request) {
     const quoteNumber = typeof body.quoteNumber === 'string' ? body.quoteNumber : '0000';
     const issueDate = typeof body.issueDate === 'string' ? body.issueDate : new Intl.DateTimeFormat('fr-FR').format(new Date());
     const signatureName = typeof body.signatureName === 'string' ? body.signatureName.trim() : '';
+    const vatRateRaw = typeof body.vatRate === 'number' && Number.isFinite(body.vatRate)
+      ? body.vatRate
+      : 20;
+    const vatRate = Math.min(100, Math.max(0, vatRateRaw));
     const locationAddress = typeof body.locationAddress === 'string' ? body.locationAddress.trim() : '';
     const locationLat = typeof body.locationLat === 'number' && Number.isFinite(body.locationLat)
       ? body.locationLat
@@ -66,6 +96,7 @@ export async function POST(request: Request) {
       clientName,
       items,
       total,
+      vatRate,
       quoteNumber,
       issueDate,
       status: 'sent' as const,

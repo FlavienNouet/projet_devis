@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { Plus, Download, Trash2, FileText, AlertCircle, LogOut, UserRound, History, Users, MapPin, BarChart3 } from 'lucide-react';
+import { Plus, Download, Trash2, FileText, AlertCircle, LogOut, UserRound, History, Users, MapPin, BarChart3, ShieldCheck, CreditCard, Crown } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
 import { InvoicePDF } from '@/components/InvoicePDF';
+import { SignaturePad } from '@/components/SignaturePad';
 
 const PDFDownloadLink = dynamic(
   () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
@@ -27,6 +28,49 @@ interface AuthUser {
   companyName: string;
   siret: string;
   email: string;
+  role: 'admin' | 'user';
+  plan: 'free' | 'pro' | 'team';
+  billingStatus: 'inactive' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid';
+}
+
+interface PlanDefinition {
+  id: 'free' | 'pro' | 'team';
+  label: string;
+  monthlyPriceLabel: string;
+  maxInvoicesPerMonth: number | null;
+  analyticsEnabled: boolean;
+  csvExportEnabled: boolean;
+  usersTabEnabled: boolean;
+}
+
+const DEFAULT_PLAN_DEFINITIONS: PlanDefinition[] = [
+  {
+    id: 'free',
+    label: 'Free',
+    monthlyPriceLabel: '0 € / mois',
+    maxInvoicesPerMonth: 10,
+    analyticsEnabled: false,
+    csvExportEnabled: false,
+    usersTabEnabled: false,
+  },
+  {
+    id: 'pro',
+    label: 'Pro',
+    monthlyPriceLabel: '10 € / mois',
+    maxInvoicesPerMonth: null,
+    analyticsEnabled: true,
+    csvExportEnabled: true,
+    usersTabEnabled: false,
+  },
+];
+
+interface AdminUserRecord {
+  id: string;
+  companyName: string;
+  siret: string;
+  email: string;
+  role: 'admin' | 'user';
+  createdAt: string;
 }
 
 interface ClientRecord {
@@ -48,6 +92,7 @@ interface InvoiceRecord {
   clientName: string;
   items: Item[];
   total: number;
+  vatRate?: number;
   negotiatedTotal?: number;
   negotiationNote?: string;
   quoteNumber: string;
@@ -74,14 +119,15 @@ interface AddressSuggestion {
 }
 
 type AuthMode = 'login' | 'register';
-type ActiveTab = 'home' | 'analytics' | 'quote' | 'history' | 'invoices' | 'clients' | 'map' | 'profile';
+type ActiveTab = 'home' | 'analytics' | 'quote' | 'history' | 'invoices' | 'clients' | 'users' | 'map' | 'profile' | 'billing';
 
 export default function CreateInvoice() {
   const [isClient, setIsClient] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [clientName, setClientName] = useState('');
-  const [quoteSignatureName, setQuoteSignatureName] = useState('');
+  const [quoteSignatureDataUrl, setQuoteSignatureDataUrl] = useState('');
+  const [vatRate, setVatRate] = useState<number>(20);
   const [quoteLocation, setQuoteLocation] = useState('');
   const [quoteLocationLat, setQuoteLocationLat] = useState<number | null>(null);
   const [quoteLocationLng, setQuoteLocationLng] = useState<number | null>(null);
@@ -102,6 +148,7 @@ export default function CreateInvoice() {
   const [issueDate, setIssueDate] = useState('');
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
+  const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
 
   const [newClientName, setNewClientName] = useState('');
   const [newClientEmail, setNewClientEmail] = useState('');
@@ -115,9 +162,11 @@ export default function CreateInvoice() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [isSavingInvoice, setIsSavingInvoice] = useState(false);
+  const [isAdminUsersLoading, setIsAdminUsersLoading] = useState(false);
   const [isConvertingToInvoice, setIsConvertingToInvoice] = useState('');
   const [isCreatingRevisionForQuoteId, setIsCreatingRevisionForQuoteId] = useState('');
   const [deletingClientId, setDeletingClientId] = useState('');
+  const [deletingUserId, setDeletingUserId] = useState('');
   const [deletingInvoiceId, setDeletingInvoiceId] = useState('');
   const [updatingInvoiceId, setUpdatingInvoiceId] = useState('');
   const [updatingPaymentInvoiceId, setUpdatingPaymentInvoiceId] = useState('');
@@ -128,6 +177,12 @@ export default function CreateInvoice() {
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
   const [isAddressSuggestionsLoading, setIsAddressSuggestionsLoading] = useState(false);
+  const [billingPlan, setBillingPlan] = useState<'free' | 'pro' | 'team'>('free');
+  const [billingStatus, setBillingStatus] = useState<'inactive' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid'>('inactive');
+  const [planDefinitions, setPlanDefinitions] = useState<PlanDefinition[]>([]);
+  const [isBillingLoading, setIsBillingLoading] = useState(false);
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState<'pro-month' | 'pro-year' | ''>('');
+  const [isPortalLoading, setIsPortalLoading] = useState(false);
 
   const resetQuoteMeta = useCallback(() => {
     setIssueDate(new Intl.DateTimeFormat('fr-FR').format(new Date()));
@@ -157,6 +212,7 @@ export default function CreateInvoice() {
         const result = await invoicesResponse.json();
         setInvoices(Array.isArray(result.invoices) ? result.invoices : []);
       }
+
     } catch {
       setDashboardError('Impossible de charger les données du tableau de bord.');
     } finally {
@@ -196,6 +252,40 @@ export default function CreateInvoice() {
     setProfileSiret(currentUser.siret || '');
     loadDashboardData();
   }, [currentUser, loadDashboardData]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkoutResult = params.get('checkout');
+    const tab = params.get('tab');
+
+    if (tab === 'billing' || checkoutResult) {
+      setActiveTab('billing');
+    }
+
+    if (checkoutResult === 'success') {
+      setDashboardSuccess('Paiement confirmé. Votre plan sera activé dans quelques secondes.');
+    }
+
+    if (checkoutResult === 'cancel') {
+      setDashboardError('Paiement annulé. Aucun changement de plan n\'a été appliqué.');
+    }
+
+    if (checkoutResult || tab) {
+      params.delete('checkout');
+      params.delete('tab');
+      const query = params.toString();
+      const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}`;
+      window.history.replaceState({}, '', nextUrl);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    if (currentUser.role !== 'admin' && activeTab === 'users') {
+      setActiveTab('home');
+    }
+  }, [activeTab, currentUser]);
 
   useEffect(() => {
     if (activeTab !== 'quote') {
@@ -265,13 +355,21 @@ export default function CreateInvoice() {
     items.reduce((acc, item) => acc + (item.prix * item.qty), 0)
   , [items]);
 
-  const hasValidData = useMemo(() => 
-    clientName.trim() && items.some(item => item.designation.trim())
-  , [clientName, items]);
+  const totalTtc = useMemo(() => total * (1 + vatRate / 100), [total, vatRate]);
+
+  const hasValidData = useMemo(() =>
+    Boolean(clientName.trim())
+    && items.some((item) => item.designation.trim())
+    && Boolean(quoteSignatureDataUrl.trim())
+  , [clientName, items, quoteSignatureDataUrl]);
 
   const sanitizedClientName = useMemo(() =>
     clientName.replace(/[^a-zA-Z0-9]/g, '_') || 'client'
   , [clientName]);
+
+  const effectivePlan = billingPlan || currentUser?.plan || 'free';
+  const canAccessAnalytics = effectivePlan !== 'free';
+  const canExportCsv = effectivePlan !== 'free';
 
   const invoicesByClient = useMemo(() => {
     return invoices.reduce<Record<string, InvoiceRecord[]>>((accumulator, invoice) => {
@@ -543,7 +641,7 @@ export default function CreateInvoice() {
 
   const handleDownload = useCallback(() => {
     if (!hasValidData) {
-      alert('Veuillez remplir au moins le nom du client et une désignation.');
+      alert('Veuillez renseigner le nom du client, au moins une prestation et votre signature électronique.');
       return false;
     }
 
@@ -559,7 +657,8 @@ export default function CreateInvoice() {
           credentials: 'include',
           body: JSON.stringify({
             clientName: clientName.trim(),
-            signatureName: quoteSignatureName.trim(),
+            signatureName: quoteSignatureDataUrl.trim(),
+            vatRate,
             clientId: selectedClientId,
             locationAddress: quoteLocation.trim(),
             locationLat: quoteLocationLat,
@@ -578,7 +677,7 @@ export default function CreateInvoice() {
 
         await loadDashboardData();
         resetQuoteMeta();
-        setQuoteSignatureName('');
+        setQuoteSignatureDataUrl('');
       } catch {
         setDashboardError('Erreur réseau pendant la sauvegarde du devis.');
       } finally {
@@ -596,12 +695,13 @@ export default function CreateInvoice() {
     items,
     loadDashboardData,
     quoteNumber,
-    quoteSignatureName,
+    quoteSignatureDataUrl,
     quoteLocation,
     quoteLocationLat,
     quoteLocationLng,
     resetQuoteMeta,
     selectedClientId,
+    vatRate,
   ]);
 
   const resetAuthMessages = useCallback(() => {
@@ -709,7 +809,8 @@ export default function CreateInvoice() {
       } finally {
         setCurrentUser(null);
         setClientName('');
-        setQuoteSignatureName('');
+        setQuoteSignatureDataUrl('');
+        setVatRate(20);
         setQuoteLocation('');
         setQuoteLocationLat(null);
         setQuoteLocationLng(null);
@@ -719,6 +820,10 @@ export default function CreateInvoice() {
         setActiveTab('home');
         setClients([]);
         setInvoices([]);
+        setAdminUsers([]);
+        setBillingPlan('free');
+        setBillingStatus('inactive');
+        setPlanDefinitions([]);
         resetAuthMessages();
         resetDashboardMessages();
       }
@@ -1065,6 +1170,12 @@ export default function CreateInvoice() {
   const handleExportInvoicesCsv = useCallback(() => {
     resetDashboardMessages();
 
+    if (!canExportCsv) {
+      setDashboardError('L\'export CSV est réservé au plan Pro.');
+      setActiveTab('billing');
+      return;
+    }
+
     const runExport = async () => {
       try {
         setIsExportingInvoicesCsv(true);
@@ -1105,7 +1216,200 @@ export default function CreateInvoice() {
     };
 
     runExport();
+  }, [canExportCsv, resetDashboardMessages]);
+
+  const loadBillingState = useCallback(async () => {
+    if (!currentUser) {
+      return;
+    }
+
+    try {
+      setIsBillingLoading(true);
+
+      const response = await fetch('/api/billing/plan', {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setDashboardError(result.error || 'Impossible de charger la facturation.');
+        return;
+      }
+
+      setBillingPlan(result.plan === 'team' ? 'team' : result.plan === 'pro' ? 'pro' : 'free');
+      setBillingStatus(
+        result.billingStatus === 'trialing'
+          ? 'trialing'
+          : result.billingStatus === 'active'
+            ? 'active'
+            : result.billingStatus === 'past_due'
+              ? 'past_due'
+              : result.billingStatus === 'canceled'
+                ? 'canceled'
+                : result.billingStatus === 'unpaid'
+                  ? 'unpaid'
+                  : 'inactive'
+      );
+      setPlanDefinitions(Array.isArray(result.planDefinitions) ? result.planDefinitions : []);
+    } catch {
+      setDashboardError('Erreur réseau pendant le chargement de la facturation.');
+    } finally {
+      setIsBillingLoading(false);
+    }
+  }, [currentUser]);
+
+  const handleStartCheckout = useCallback((plan: 'pro', interval: 'month' | 'year') => {
+    resetDashboardMessages();
+
+    const runCheckout = async () => {
+      try {
+        setIsCheckoutLoading(`${plan}-${interval}`);
+
+        const response = await fetch('/api/billing/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ plan, interval }),
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || !result.url) {
+          setDashboardError(result.error || 'Impossible de démarrer le paiement.');
+          return;
+        }
+
+        window.location.href = result.url;
+      } catch {
+        setDashboardError('Erreur réseau pendant la création de session Stripe.');
+      } finally {
+        setIsCheckoutLoading('');
+      }
+    };
+
+    runCheckout();
   }, [resetDashboardMessages]);
+
+  const handleOpenBillingPortal = useCallback(() => {
+    resetDashboardMessages();
+
+    const runPortal = async () => {
+      try {
+        setIsPortalLoading(true);
+
+        const response = await fetch('/api/billing/portal', {
+          method: 'POST',
+          credentials: 'include',
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || !result.url) {
+          setDashboardError(result.error || 'Impossible d\'ouvrir le portail Stripe.');
+          return;
+        }
+
+        window.location.href = result.url;
+      } catch {
+        setDashboardError('Erreur réseau pendant l\'ouverture du portail de facturation.');
+      } finally {
+        setIsPortalLoading(false);
+      }
+    };
+
+    runPortal();
+  }, [resetDashboardMessages]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
+    loadBillingState();
+  }, [currentUser, loadBillingState]);
+
+  const loadAdminUsers = useCallback(async () => {
+    if (!currentUser || currentUser.role !== 'admin') {
+      return;
+    }
+
+    try {
+      setIsAdminUsersLoading(true);
+
+      const response = await fetch('/api/admin/users', {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setDashboardError(result.error || 'Impossible de charger la liste des utilisateurs.');
+        return;
+      }
+
+      setAdminUsers(Array.isArray(result.users) ? result.users : []);
+    } catch {
+      setDashboardError('Erreur réseau pendant le chargement des utilisateurs.');
+    } finally {
+      setIsAdminUsersLoading(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (activeTab !== 'users') {
+      return;
+    }
+
+    if (currentUser?.role !== 'admin') {
+      return;
+    }
+
+    loadAdminUsers();
+  }, [activeTab, currentUser, loadAdminUsers]);
+
+  const handleDeleteUser = useCallback((user: AdminUserRecord) => {
+    resetDashboardMessages();
+
+    const confirmed = window.confirm(
+      `Supprimer l'utilisateur \"${user.companyName}\" (${user.email}) ? Cette action supprimera aussi ses clients et devis.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const runDeleteUser = async () => {
+      try {
+        setDeletingUserId(user.id);
+
+        const response = await fetch(`/api/admin/users/${user.id}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          setDashboardError(result.error || 'Impossible de supprimer cet utilisateur.');
+          return;
+        }
+
+        setDashboardSuccess('Utilisateur supprimé avec succès.');
+        await loadAdminUsers();
+      } catch {
+        setDashboardError('Erreur réseau pendant la suppression de l\'utilisateur.');
+      } finally {
+        setDeletingUserId('');
+      }
+    };
+
+    runDeleteUser();
+  }, [loadAdminUsers, resetDashboardMessages]);
 
   const handleSaveProfile = useCallback(() => {
     resetDashboardMessages();
@@ -1290,8 +1594,12 @@ export default function CreateInvoice() {
           ? 'Factures'
         : activeTab === 'clients'
           ? 'Clients'
+          : activeTab === 'users'
+            ? 'Utilisateurs'
           : activeTab === 'map'
             ? 'Carte des devis'
+            : activeTab === 'billing'
+              ? 'Facturation'
             : 'Mon profil';
 
   const activeTabSubtitle =
@@ -1307,8 +1615,12 @@ export default function CreateInvoice() {
           ? 'Retrouvez et téléchargez toutes vos factures'
         : activeTab === 'clients'
           ? 'Gérez votre base clients et leurs devis'
+          : activeTab === 'users'
+            ? 'Vue administrateur de tous les comptes utilisateurs'
           : activeTab === 'map'
             ? 'Visualisez la localisation de vos devis'
+            : activeTab === 'billing'
+              ? 'Abonnement, paiement et limites de votre plan'
             : 'Mettez à jour les informations de votre société';
 
   const quickSearchPlaceholder =
@@ -1322,8 +1634,12 @@ export default function CreateInvoice() {
         ? 'Rechercher une facture...'
       : activeTab === 'clients'
         ? 'Rechercher un client...'
+        : activeTab === 'users'
+          ? 'Rechercher un utilisateur...'
         : activeTab === 'map'
           ? 'Recherche globale (aperçu carte)...'
+        : activeTab === 'billing'
+          ? 'Recherche facturation...'
         : 'Recherche rapide...';
 
   const userDisplayName = currentUser.companyName.trim() || currentUser.email.split('@')[0] || 'Utilisateur';
@@ -1440,6 +1756,23 @@ export default function CreateInvoice() {
               Factures
             </button>
 
+            {currentUser.role === 'admin' && (
+              <button
+                onClick={() => {
+                  resetDashboardMessages();
+                  setActiveTab('users');
+                }}
+                className={`w-full px-4 py-3 rounded-xl border font-semibold transition-all flex items-center gap-3 ${
+                  activeTab === 'users'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200/50'
+                    : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <ShieldCheck size={18} />
+                Utilisateurs
+              </button>
+            )}
+
             <button
               onClick={() => {
                 resetDashboardMessages();
@@ -1468,6 +1801,21 @@ export default function CreateInvoice() {
             >
               <UserRound size={18} />
               Profil
+            </button>
+
+            <button
+              onClick={() => {
+                resetDashboardMessages();
+                setActiveTab('billing');
+              }}
+              className={`w-full px-4 py-3 rounded-xl border font-semibold transition-all flex items-center gap-3 ${
+                activeTab === 'billing'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200/50'
+                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <CreditCard size={18} />
+              Facturation
             </button>
           </div>
 
@@ -1645,7 +1993,8 @@ export default function CreateInvoice() {
           )}
 
           {activeTab === 'analytics' && (
-            <div className="space-y-8">
+            canAccessAnalytics ? (
+              <div className="space-y-8">
               <div className="border border-gray-200 bg-white rounded-2xl p-5">
                 <h2 className="text-2xl font-black text-gray-900 mb-4">Évolution mensuelle</h2>
                 <p className="text-sm text-gray-500 mb-4">Comparaison du facturé et de l&apos;encaissé sur les 6 derniers mois.</p>
@@ -1657,7 +2006,10 @@ export default function CreateInvoice() {
                       <XAxis dataKey="label" stroke="#6b7280" />
                       <YAxis stroke="#6b7280" />
                       <Tooltip
-                        formatter={(value: number) => value.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                        formatter={(value: number | string | undefined) => {
+                          const numericValue = typeof value === 'number' ? value : Number(value) || 0;
+                          return numericValue.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
+                        }}
                       />
                       <Legend />
                       <Bar dataKey="billed" name="Facturé" fill="#3b82f6" radius={[8, 8, 0, 0]} />
@@ -1732,7 +2084,24 @@ export default function CreateInvoice() {
                   )}
                 </div>
               </div>
-            </div>
+              </div>
+            ) : (
+              <div className="border border-amber-200 bg-amber-50 rounded-2xl p-6 space-y-4">
+                <div className="flex items-center gap-2 text-amber-800 font-bold">
+                  <Crown size={18} />
+                  Dashboard+ réservé au plan Pro
+                </div>
+                <p className="text-sm text-amber-700">
+                  Passez à un plan payant pour débloquer vos graphiques de pilotage, la répartition des statuts et l&apos;analyse de performance.
+                </p>
+                <button
+                  onClick={() => setActiveTab('billing')}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-semibold"
+                >
+                  Voir les plans
+                </button>
+              </div>
+            )
           )}
 
           {activeTab === 'quote' && (
@@ -1832,12 +2201,32 @@ export default function CreateInvoice() {
                 </div>
 
                 <div className="group">
-                  <label className="block text-sm font-bold text-gray-700 mb-3">Signature client (bon pour accord)</label>
+                  <label className="block text-sm font-bold text-gray-700 mb-3">Taux TVA (%)</label>
                   <input
-                    placeholder="Ex: Jean Dupont"
-                    className="w-full p-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white text-gray-900 placeholder-gray-400"
-                    value={quoteSignatureName}
-                    onChange={(event) => setQuoteSignatureName(event.target.value)}
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    className="w-full p-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white text-gray-900"
+                    value={vatRate}
+                    onChange={(event) => {
+                      const parsed = Number(event.target.value.replace(',', '.'));
+
+                      if (!Number.isFinite(parsed)) {
+                        setVatRate(0);
+                        return;
+                      }
+
+                      setVatRate(Math.min(100, Math.max(0, parsed)));
+                    }}
+                  />
+                </div>
+
+                <div className="group">
+                  <label className="block text-sm font-bold text-gray-700 mb-3">Votre signature électronique (souris/doigt)</label>
+                  <SignaturePad
+                    value={quoteSignatureDataUrl}
+                    onChange={setQuoteSignatureDataUrl}
                   />
                 </div>
               </div>
@@ -1924,10 +2313,22 @@ export default function CreateInvoice() {
                     <span className="text-sm text-gray-500 font-medium uppercase tracking-wide">HT</span>
                   </div>
 
+                  <div className="text-right">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">TTC (TVA {vatRate.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}%)</p>
+                    <p className="text-lg font-bold text-gray-900">
+                      {totalTtc.toLocaleString('fr-FR', {
+                        style: 'currency',
+                        currency: 'EUR',
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </p>
+                  </div>
+
                   {!hasValidData && (
                     <div className="flex items-center gap-2 text-sm text-orange-600 bg-orange-50 px-4 py-2 rounded-xl border border-orange-200">
                       <AlertCircle size={16} />
-                      Complétez le nom du client et au moins une prestation
+                      Complétez le nom du client, au moins une prestation et votre signature électronique
                     </div>
                   )}
                 </div>
@@ -1944,7 +2345,8 @@ export default function CreateInvoice() {
                         quoteNumber,
                         issueDate,
                         documentType: 'quote',
-                        signatureName: quoteSignatureName.trim(),
+                        vatRate,
+                        signatureName: quoteSignatureDataUrl.trim(),
                       }}
                     />
                   }
@@ -2059,6 +2461,7 @@ export default function CreateInvoice() {
                                       quoteNumber: invoice.quoteNumber,
                                       issueDate: invoice.issueDate,
                                       documentType: invoice.documentType,
+                                      vatRate: invoice.vatRate ?? 20,
                                       signatureName: invoice.signatureName,
                                     }}
                                   />
@@ -2080,6 +2483,10 @@ export default function CreateInvoice() {
                               {convertedQuoteIds.has(invoice.id) ? (
                                 <span className="px-4 py-2 border border-emerald-200 text-emerald-700 bg-emerald-50 rounded-xl font-semibold text-sm">
                                   Déjà facturé
+                                </span>
+                              ) : invoice.status === 'rejected' ? (
+                                <span className="px-4 py-2 border border-red-200 text-red-700 bg-red-50 rounded-xl font-semibold text-sm">
+                                  Refusé · non facturable
                                 </span>
                               ) : (
                                 <button
@@ -2103,7 +2510,7 @@ export default function CreateInvoice() {
                                 {convertedQuoteIds.has(invoice.id)
                                   ? 'Modification bloquée (facturé)'
                                   : invoice.status !== 'sent'
-                                    ? 'Modification bloquée (accepté)'
+                                    ? `Modification bloquée (${getStatusLabel(invoice.status).toLowerCase()})`
                                     : isCreatingRevisionForQuoteId === invoice.id
                                       ? 'Création...'
                                       : 'Devis après négo'}
@@ -2125,10 +2532,10 @@ export default function CreateInvoice() {
                 <h2 className="text-2xl font-black text-gray-900">Historique des factures</h2>
                 <button
                   onClick={handleExportInvoicesCsv}
-                  disabled={isExportingInvoicesCsv || invoiceDocuments.length === 0}
+                  disabled={isExportingInvoicesCsv || invoiceDocuments.length === 0 || !canExportCsv}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm disabled:opacity-60"
                 >
-                  {isExportingInvoicesCsv ? 'Export...' : 'Exporter CSV'}
+                  {isExportingInvoicesCsv ? 'Export...' : canExportCsv ? 'Exporter CSV' : 'Exporter CSV (Pro)'}
                 </button>
               </div>
 
@@ -2182,6 +2589,7 @@ export default function CreateInvoice() {
                                 quoteNumber: invoice.quoteNumber,
                                 issueDate: invoice.issueDate,
                                 documentType: 'invoice',
+                                vatRate: invoice.vatRate ?? 20,
                                 signatureName: invoice.signatureName,
                               }}
                             />
@@ -2306,6 +2714,77 @@ export default function CreateInvoice() {
             </div>
           )}
 
+          {activeTab === 'users' && currentUser.role === 'admin' && (
+            <div className="space-y-4">
+              <h2 className="text-2xl font-black text-gray-900">Liste des utilisateurs</h2>
+
+              {isAdminUsersLoading ? (
+                <div className="text-gray-600 bg-gray-50 border border-gray-200 rounded-2xl p-6">
+                  Chargement des utilisateurs...
+                </div>
+              ) : adminUsers.length === 0 ? (
+                <div className="text-gray-600 bg-gray-50 border border-gray-200 rounded-2xl p-6">
+                  Aucun utilisateur trouvé.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {adminUsers
+                    .filter((user) => {
+                      const query = globalSearch.trim().toLowerCase();
+                      if (!query) return true;
+
+                      return (
+                        user.companyName.toLowerCase().includes(query)
+                        || user.email.toLowerCase().includes(query)
+                        || user.siret.toLowerCase().includes(query)
+                      );
+                    })
+                    .map((user) => (
+                      <div key={user.id} className="border border-gray-200 bg-white rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div>
+                          <p className="font-bold text-gray-900">{user.companyName}</p>
+                          <p className="text-sm text-gray-500">{user.email}</p>
+                          <p className="text-sm text-gray-500">SIRET: {user.siret || '-'}</p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-3 py-1 rounded-full border font-semibold ${
+                            user.role === 'admin'
+                              ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                              : 'bg-gray-100 text-gray-700 border-gray-200'
+                          }`}>
+                            {user.role === 'admin' ? 'Admin' : 'Utilisateur'}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            Créé le {new Date(user.createdAt).toLocaleDateString('fr-FR')}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteUser(user)}
+                            disabled={
+                              deletingUserId === user.id
+                              || user.id === currentUser.id
+                              || user.email.toLowerCase() === 'admin@admin.fr'
+                            }
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                            title={
+                              user.id === currentUser.id
+                                ? 'Vous ne pouvez pas supprimer votre propre compte.'
+                                : user.email.toLowerCase() === 'admin@admin.fr'
+                                  ? 'Le compte admin principal est protégé.'
+                                  : 'Supprimer cet utilisateur'
+                            }
+                          >
+                            <Trash2 size={14} />
+                            {deletingUserId === user.id ? 'Suppression...' : 'Supprimer'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'map' && (
             <div className="space-y-5">
               <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 p-3 rounded-xl">
@@ -2313,6 +2792,95 @@ export default function CreateInvoice() {
               </div>
 
               <InvoiceMap invoices={invoices} />
+            </div>
+          )}
+
+          {activeTab === 'billing' && (
+            <div className="space-y-6">
+              <div className="border border-gray-200 bg-white rounded-2xl p-5">
+                <p className="text-sm text-gray-500">Plan actuel</p>
+                <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-2xl font-black text-gray-900 uppercase">{billingPlan}</p>
+                  <span className="px-3 py-1 rounded-full border border-blue-200 bg-blue-50 text-blue-700 text-sm font-semibold">
+                    Statut: {billingPlan === 'free' ? 'actif (gratuit)' : billingStatus}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500 mt-2">
+                  {billingPlan === 'free'
+                    ? 'Plan gratuit actif: fonctionnalités avancées limitées.'
+                    : 'Plan payant actif: toutes les fonctionnalités premium sont débloquées.'}
+                </p>
+
+                {billingPlan !== 'free' && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      onClick={handleOpenBillingPortal}
+                      disabled={isPortalLoading}
+                      className="px-4 py-2 border border-gray-300 rounded-xl font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                    >
+                      {isPortalLoading ? 'Ouverture...' : 'Gérer abonnement Stripe'}
+                    </button>
+                    <button
+                      onClick={loadBillingState}
+                      disabled={isBillingLoading}
+                      className="px-4 py-2 border border-blue-300 rounded-xl font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"
+                    >
+                      {isBillingLoading ? 'Actualisation...' : 'Actualiser le statut'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {(planDefinitions.length > 0 ? planDefinitions : DEFAULT_PLAN_DEFINITIONS).map((plan) => {
+                  const isCurrent = plan.id === billingPlan;
+
+                  return (
+                    <div key={plan.id} className={`rounded-2xl border p-5 ${isCurrent ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white'}`}>
+                      <p className="text-lg font-black text-gray-900">{plan.label}</p>
+                      <p className="text-sm text-gray-600 mt-1">{plan.monthlyPriceLabel}</p>
+
+                      <ul className="mt-4 space-y-2 text-sm text-gray-700">
+                        <li>Dashboard+: {plan.analyticsEnabled ? 'oui' : 'non'}</li>
+                        <li>Export CSV: {plan.csvExportEnabled ? 'oui' : 'non'}</li>
+                        <li>
+                          Limite mensuelle: {plan.maxInvoicesPerMonth === null ? 'illimitée' : `${plan.maxInvoicesPerMonth} documents`}
+                        </li>
+                      </ul>
+
+                      <div className="mt-5 space-y-2">
+                        {isCurrent ? (
+                          <span className="inline-flex px-3 py-2 rounded-xl border border-blue-300 text-blue-700 font-semibold text-sm">
+                            Plan actuel
+                          </span>
+                        ) : plan.id === 'free' ? (
+                          <span className="inline-flex px-3 py-2 rounded-xl border border-gray-300 text-gray-500 font-semibold text-sm">
+                            Plan de base
+                          </span>
+                        ) : plan.id === 'pro' ? (
+                          <>
+                            <button
+                              onClick={() => handleStartCheckout(plan.id as 'pro', 'month')}
+                              disabled={isCheckoutLoading !== ''}
+                              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold disabled:opacity-60"
+                            >
+                              {isCheckoutLoading === `${plan.id}-month` ? 'Redirection...' : `Choisir ${plan.label} mensuel`}
+                            </button>
+                            <button
+                              onClick={() => handleStartCheckout(plan.id as 'pro', 'year')}
+                              disabled={isCheckoutLoading !== ''}
+                              className="w-full px-4 py-2 border border-blue-300 text-blue-700 hover:bg-blue-50 rounded-xl font-semibold disabled:opacity-60"
+                            >
+                              {isCheckoutLoading === `${plan.id}-year` ? 'Redirection...' : `Choisir ${plan.label} annuel`}
+                            </button>
+                          </>
+                        ) : null
+                        }
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 

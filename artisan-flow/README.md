@@ -1,6 +1,6 @@
 # Artisan Flow
 
-Application Next.js pour créer des devis PDF avec authentification (inscription / connexion) et reprise automatique du nom de société sur le devis.
+Application Next.js pour créer des devis/factures PDF avec authentification (inscription / connexion) et reprise automatique du nom de société sur le devis.
 
 ## Démarrage
 
@@ -14,22 +14,49 @@ npm install
 
 ```env
 AUTH_SECRET=votre-cle-secrete-tres-longue-et-aleatoire
+STRIPE_SECRET_KEY=sk_test_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+STRIPE_PRICE_PRO_MONTHLY=price_xxx
+STRIPE_PRICE_PRO_YEARLY=price_xxx
+STRIPE_PRODUCT_PRO=prod_xxx
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
-3. Lancer le serveur :
+`STRIPE_PRODUCT_PRO` est optionnel : s'il est défini, l'application peut retrouver automatiquement les prix Pro mensuel/annuel du produit Stripe.
+
+3. Initialiser la base SQLite (Prisma) :
+
+```bash
+npm run db:push
+```
+
+4. (Optionnel) Migrer les anciennes données JSON vers la base :
+
+```bash
+npm run db:migrate:json
+```
+
+5. Lancer le serveur :
 
 ```bash
 npm run dev
 ```
 
-4. Ouvrir [http://localhost:3000](http://localhost:3000).
+6. Ouvrir [http://localhost:3000](http://localhost:3000).
 
 ## Authentification (version sécurisée)
 
 - Les mots de passe sont hashés côté serveur avec `bcryptjs`.
 - La session est stockée dans un cookie `HttpOnly` signé (JWT via `jose`).
-- Les utilisateurs sont stockés côté serveur dans `data/users.json`.
+- Les utilisateurs, clients, devis et factures sont stockés en base SQLite via Prisma.
 - Le nom de la société du compte connecté est injecté automatiquement dans le PDF du devis.
+
+## Base de données
+
+- Schéma Prisma : `prisma/schema.prisma`
+- Client Prisma partagé : `lib/prisma.ts`
+- Base locale : `prisma/dev.db`
+- Script migration JSON -> DB : `scripts/migrate-json-to-db.cjs`
 
 ## API disponibles
 
@@ -37,6 +64,19 @@ npm run dev
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
+- `GET /api/billing/plan`
+- `GET /api/billing/debug` (admin uniquement)
+- `POST /api/billing/checkout`
+- `POST /api/billing/portal`
+- `POST /api/billing/webhook`
+
+## Stripe Webhook local
+
+Pour synchroniser automatiquement les abonnements vers la base :
+
+```bash
+stripe listen --forward-to localhost:3000/api/billing/webhook
+```
 
 ## Vérification code
 

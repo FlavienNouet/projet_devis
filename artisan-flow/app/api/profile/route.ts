@@ -56,6 +56,9 @@ export async function PATCH(request: Request) {
       companyName: updatedUser.companyName,
       siret: updatedUser.siret,
       email: updatedUser.email,
+      role: updatedUser.role === 'admin' ? 'admin' as const : 'user' as const,
+      plan: updatedUser.plan ?? 'free' as const,
+      billingStatus: updatedUser.billingStatus ?? 'inactive' as const,
     };
 
     const refreshedToken = await createSessionToken(user);

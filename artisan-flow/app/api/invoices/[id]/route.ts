@@ -181,6 +181,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         clientName: invoice.clientName,
         items: invoice.items,
         total: invoice.negotiatedTotal ?? invoice.total,
+        vatRate: invoice.vatRate ?? 20,
         quoteNumber: invoiceNumber,
         issueDate: new Intl.DateTimeFormat('fr-FR').format(new Date()),
         status: 'sent' as const,

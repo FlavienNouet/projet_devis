@@ -1,5 +1,5 @@
-import { promises as fs } from 'fs';
-import path from 'path';
+import { Prisma } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 
 export interface StoredInvoiceItem {
   designation: string;
@@ -14,6 +14,7 @@ export interface StoredInvoice {
   clientName: string;
   items: StoredInvoiceItem[];
   total: number;
+  vatRate?: number;
   negotiatedTotal?: number;
   negotiationNote?: string;
   quoteNumber: string;
@@ -31,87 +32,90 @@ export interface StoredInvoice {
   createdAt: string;
 }
 
-const INVOICES_FILE_PATH = path.join(process.cwd(), 'data', 'invoices.json');
-
-const ensureInvoicesFile = async () => {
-  const directoryPath = path.dirname(INVOICES_FILE_PATH);
-  await fs.mkdir(directoryPath, { recursive: true });
-
-  try {
-    await fs.access(INVOICES_FILE_PATH);
-  } catch {
-    await fs.writeFile(INVOICES_FILE_PATH, '[]', 'utf8');
-  }
+const normalizeStatus = (status: unknown): StoredInvoice['status'] => {
+  if (status === 'accepted') return 'accepted';
+  if (status === 'rejected') return 'rejected';
+  return 'sent';
 };
 
-const readInvoices = async (): Promise<StoredInvoice[]> => {
-  await ensureInvoicesFile();
-  const content = await fs.readFile(INVOICES_FILE_PATH, 'utf8');
+const toStoredInvoice = (invoice: {
+  id: string;
+  userId: string;
+  clientId: string;
+  clientName: string;
+  items: Prisma.JsonValue;
+  total: number;
+  vatRate: number;
+  negotiatedTotal: number | null;
+  negotiationNote: string | null;
+  quoteNumber: string;
+  issueDate: string;
+  status: string;
+  documentType: string;
+  sourceQuoteId: string | null;
+  paymentStatus: string | null;
+  paidAmount: number | null;
+  paidDate: string | null;
+  locationAddress: string | null;
+  locationLat: number | null;
+  locationLng: number | null;
+  signatureName: string | null;
+  createdAt: Date;
+}): StoredInvoice => {
+  const parsedItems = Array.isArray(invoice.items)
+    ? invoice.items
+        .map((item): StoredInvoiceItem | null => {
+          if (!item || typeof item !== 'object') return null;
 
-  try {
-    const parsed = JSON.parse(content);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
+          const value = item as Record<string, unknown>;
+          const designation = typeof value.designation === 'string' ? value.designation : '';
+          const prix = typeof value.prix === 'number' ? value.prix : 0;
+          const qty = typeof value.qty === 'number' ? value.qty : 0;
 
-const writeInvoices = async (invoices: StoredInvoice[]) => {
-  await ensureInvoicesFile();
-  await fs.writeFile(INVOICES_FILE_PATH, JSON.stringify(invoices, null, 2), 'utf8');
+          return { designation, prix, qty };
+        })
+        .filter((item): item is StoredInvoiceItem => Boolean(item))
+    : [];
+
+  return {
+    id: invoice.id,
+    userId: invoice.userId,
+    clientId: invoice.clientId,
+    clientName: invoice.clientName,
+    items: parsedItems,
+    total: invoice.total,
+    vatRate: Number.isFinite(invoice.vatRate) ? invoice.vatRate : 20,
+    negotiatedTotal: invoice.negotiatedTotal ?? undefined,
+    negotiationNote: invoice.negotiationNote ?? undefined,
+    quoteNumber: invoice.quoteNumber,
+    issueDate: invoice.issueDate,
+    status: normalizeStatus(invoice.status),
+    documentType: invoice.documentType === 'invoice' ? 'invoice' : 'quote',
+    sourceQuoteId: invoice.sourceQuoteId ?? undefined,
+    paymentStatus: invoice.documentType === 'invoice'
+      ? (invoice.paymentStatus === 'paid'
+        ? 'paid'
+        : invoice.paymentStatus === 'partial'
+          ? 'partial'
+          : 'unpaid')
+      : undefined,
+    paidAmount: invoice.paidAmount ?? undefined,
+    paidDate: invoice.paidDate ?? undefined,
+    locationAddress: invoice.locationAddress ?? undefined,
+    locationLat: invoice.locationLat ?? undefined,
+    locationLng: invoice.locationLng ?? undefined,
+    signatureName: invoice.signatureName ?? undefined,
+    createdAt: invoice.createdAt.toISOString(),
+  };
 };
 
 export const listInvoicesByUser = async (userId: string): Promise<StoredInvoice[]> => {
-  const invoices = await readInvoices();
+  const invoices = await prisma.invoice.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+  });
 
-  const normalizeStatus = (status: unknown): StoredInvoice['status'] => {
-    if (status === 'accepted') return 'accepted';
-    if (status === 'rejected') return 'rejected';
-    return 'sent';
-  };
-
-  return invoices
-    .filter((invoice) => invoice.userId === userId)
-    .map((invoice) => ({
-      ...invoice,
-      status: normalizeStatus((invoice as { status?: unknown }).status),
-      documentType: (invoice as { documentType?: unknown }).documentType === 'invoice' ? 'invoice' : 'quote',
-      sourceQuoteId: typeof (invoice as { sourceQuoteId?: unknown }).sourceQuoteId === 'string'
-        ? (invoice as { sourceQuoteId?: string }).sourceQuoteId
-        : undefined,
-      paymentStatus: (invoice as { documentType?: unknown }).documentType === 'invoice'
-        ? ((invoice as { paymentStatus?: unknown }).paymentStatus === 'paid'
-          ? 'paid'
-          : (invoice as { paymentStatus?: unknown }).paymentStatus === 'partial'
-            ? 'partial'
-            : 'unpaid')
-        : undefined,
-      paidAmount: typeof (invoice as { paidAmount?: unknown }).paidAmount === 'number'
-        ? (invoice as { paidAmount?: number }).paidAmount
-        : undefined,
-      paidDate: typeof (invoice as { paidDate?: unknown }).paidDate === 'string'
-        ? (invoice as { paidDate?: string }).paidDate
-        : undefined,
-      negotiatedTotal: typeof (invoice as { negotiatedTotal?: unknown }).negotiatedTotal === 'number'
-        ? (invoice as { negotiatedTotal?: number }).negotiatedTotal
-        : undefined,
-      negotiationNote: typeof (invoice as { negotiationNote?: unknown }).negotiationNote === 'string'
-        ? (invoice as { negotiationNote?: string }).negotiationNote
-        : undefined,
-      locationAddress: typeof (invoice as { locationAddress?: unknown }).locationAddress === 'string'
-        ? (invoice as { locationAddress?: string }).locationAddress
-        : undefined,
-      locationLat: typeof (invoice as { locationLat?: unknown }).locationLat === 'number'
-        ? (invoice as { locationLat?: number }).locationLat
-        : undefined,
-      locationLng: typeof (invoice as { locationLng?: unknown }).locationLng === 'number'
-        ? (invoice as { locationLng?: number }).locationLng
-        : undefined,
-      signatureName: typeof (invoice as { signatureName?: unknown }).signatureName === 'string'
-        ? (invoice as { signatureName?: string }).signatureName
-        : undefined,
-    }))
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return invoices.map(toStoredInvoice);
 };
 
 export const findInvoiceByIdForUser = async (
@@ -131,9 +135,32 @@ export const findConvertedInvoiceByQuoteId = async (
 };
 
 export const createInvoice = async (newInvoice: StoredInvoice): Promise<void> => {
-  const invoices = await readInvoices();
-  invoices.push(newInvoice);
-  await writeInvoices(invoices);
+  await prisma.invoice.create({
+    data: {
+      id: newInvoice.id,
+      userId: newInvoice.userId,
+      clientId: newInvoice.clientId || '',
+      clientName: newInvoice.clientName,
+      items: newInvoice.items as unknown as Prisma.InputJsonValue,
+      total: newInvoice.total,
+      vatRate: newInvoice.vatRate ?? 20,
+      negotiatedTotal: newInvoice.negotiatedTotal,
+      negotiationNote: newInvoice.negotiationNote,
+      quoteNumber: newInvoice.quoteNumber,
+      issueDate: newInvoice.issueDate,
+      status: newInvoice.status,
+      documentType: newInvoice.documentType,
+      sourceQuoteId: newInvoice.sourceQuoteId,
+      paymentStatus: newInvoice.paymentStatus,
+      paidAmount: newInvoice.paidAmount,
+      paidDate: newInvoice.paidDate,
+      locationAddress: newInvoice.locationAddress,
+      locationLat: newInvoice.locationLat,
+      locationLng: newInvoice.locationLng,
+      signatureName: newInvoice.signatureName,
+      createdAt: new Date(newInvoice.createdAt),
+    },
+  });
 };
 
 export const updateInvoiceStatusByIdForUser = async (
@@ -141,24 +168,20 @@ export const updateInvoiceStatusByIdForUser = async (
   invoiceId: string,
   status: StoredInvoice['status']
 ): Promise<StoredInvoice | null> => {
-  const invoices = await readInvoices();
-  const invoiceIndex = invoices.findIndex(
-    (invoice) => invoice.userId === userId && invoice.id === invoiceId
-  );
+  const existing = await prisma.invoice.findFirst({
+    where: { id: invoiceId, userId },
+  });
 
-  if (invoiceIndex < 0) {
+  if (!existing) {
     return null;
   }
 
-  const updatedInvoice: StoredInvoice = {
-    ...invoices[invoiceIndex],
-    status,
-  };
+  const updatedInvoice = await prisma.invoice.update({
+    where: { id: invoiceId },
+    data: { status },
+  });
 
-  invoices[invoiceIndex] = updatedInvoice;
-  await writeInvoices(invoices);
-
-  return updatedInvoice;
+  return toStoredInvoice(updatedInvoice);
 };
 
 export const updateInvoiceByIdForUser = async (
@@ -166,65 +189,54 @@ export const updateInvoiceByIdForUser = async (
   invoiceId: string,
   updates: Partial<Pick<StoredInvoice, 'status' | 'negotiatedTotal' | 'negotiationNote' | 'paymentStatus' | 'paidAmount' | 'paidDate'>>
 ): Promise<StoredInvoice | null> => {
-  const invoices = await readInvoices();
-  const invoiceIndex = invoices.findIndex(
-    (invoice) => invoice.userId === userId && invoice.id === invoiceId
-  );
+  const existing = await prisma.invoice.findFirst({
+    where: { id: invoiceId, userId },
+  });
 
-  if (invoiceIndex < 0) {
+  if (!existing) {
     return null;
   }
 
-  const existing = invoices[invoiceIndex];
+  const updatedInvoice = await prisma.invoice.update({
+    where: { id: invoiceId },
+    data: {
+      status: updates.status,
+      negotiatedTotal: Object.prototype.hasOwnProperty.call(updates, 'negotiatedTotal')
+        ? updates.negotiatedTotal ?? null
+        : undefined,
+      negotiationNote: Object.prototype.hasOwnProperty.call(updates, 'negotiationNote')
+        ? updates.negotiationNote ?? null
+        : undefined,
+      paymentStatus: Object.prototype.hasOwnProperty.call(updates, 'paymentStatus')
+        ? updates.paymentStatus ?? null
+        : undefined,
+      paidAmount: Object.prototype.hasOwnProperty.call(updates, 'paidAmount')
+        ? updates.paidAmount ?? null
+        : undefined,
+      paidDate: Object.prototype.hasOwnProperty.call(updates, 'paidDate')
+        ? updates.paidDate ?? null
+        : undefined,
+    },
+  });
 
-  const updatedInvoice: StoredInvoice = { ...existing };
-
-  if (updates.status !== undefined) {
-    updatedInvoice.status = updates.status;
-  }
-
-  if ('negotiatedTotal' in updates) {
-    updatedInvoice.negotiatedTotal = updates.negotiatedTotal;
-  }
-
-  if ('negotiationNote' in updates) {
-    updatedInvoice.negotiationNote = updates.negotiationNote;
-  }
-
-  if ('paymentStatus' in updates) {
-    updatedInvoice.paymentStatus = updates.paymentStatus;
-  }
-
-  if ('paidAmount' in updates) {
-    updatedInvoice.paidAmount = updates.paidAmount;
-  }
-
-  if ('paidDate' in updates) {
-    updatedInvoice.paidDate = updates.paidDate;
-  }
-
-  invoices[invoiceIndex] = updatedInvoice;
-  await writeInvoices(invoices);
-
-  return updatedInvoice;
+  return toStoredInvoice(updatedInvoice);
 };
 
 export const deleteInvoiceByIdForUser = async (
   userId: string,
   invoiceId: string
 ): Promise<boolean> => {
-  const invoices = await readInvoices();
-  const initialLength = invoices.length;
+  const deleted = await prisma.invoice.deleteMany({
+    where: {
+      id: invoiceId,
+      userId,
+    },
+  });
 
-  const remainingInvoices = invoices.filter(
-    (invoice) => !(invoice.userId === userId && invoice.id === invoiceId)
-  );
-
-  if (remainingInvoices.length === initialLength) {
+  if (deleted.count === 0) {
     return false;
   }
 
-  await writeInvoices(remainingInvoices);
   return true;
 };
 
@@ -232,16 +244,23 @@ export const deleteInvoicesByClientIdForUser = async (
   userId: string,
   clientId: string
 ): Promise<number> => {
-  const invoices = await readInvoices();
-  const remainingInvoices = invoices.filter(
-    (invoice) => !(invoice.userId === userId && invoice.clientId === clientId)
-  );
+  const deleted = await prisma.invoice.deleteMany({
+    where: {
+      userId,
+      clientId,
+    },
+  });
 
-  const deletedCount = invoices.length - remainingInvoices.length;
+  return deleted.count;
+};
 
-  if (deletedCount > 0) {
-    await writeInvoices(remainingInvoices);
-  }
-
-  return deletedCount;
+export const countInvoicesByUserSince = async (userId: string, since: Date): Promise<number> => {
+  return prisma.invoice.count({
+    where: {
+      userId,
+      createdAt: {
+        gte: since,
+      },
+    },
+  });
 };

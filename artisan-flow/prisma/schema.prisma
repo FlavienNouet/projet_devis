@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id
+  companyName  String
+  siret        String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("user")
+  plan         String   @default("free")
+  billingStatus String  @default("inactive")
+  stripeCustomerId String?
+  stripeSubscriptionId String?
+  stripePriceId String?
+  createdAt    DateTime
+
+  clients Client[]
+
+  @@index([createdAt])
+}
+
+model Client {
+  id        String   @id
+  userId    String
+  name      String
+  email     String
+  phone     String
+  notes     String
+  createdAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Invoice {
+  id             String   @id
+  userId         String
+  clientId       String
+  clientName     String
+  items          Json
+  total          Float
+  vatRate        Float    @default(20)
+  negotiatedTotal Float?
+  negotiationNote String?
+  quoteNumber    String
+  issueDate      String
+  status         String
+  documentType   String
+  sourceQuoteId  String?
+  paymentStatus  String?
+  paidAmount     Float?
+  paidDate       String?
+  locationAddress String?
+  locationLat    Float?
+  locationLng    Float?
+  signatureName  String?
+  createdAt      DateTime
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model NumberingCounter {
+  id           Int    @id @default(autoincrement())
+  documentType String
+  year         String
+  value        Int    @default(0)
+
+  @@unique([documentType, year])
+}

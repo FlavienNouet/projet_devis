@@ -1,10 +1,14 @@
 import { SignJWT, jwtVerify } from 'jose';
+import { parseBillingStatus, parsePlan, type BillingPlan, type BillingStatus } from '@/lib/plans';
 
 export interface SessionUser {
   id: string;
   companyName: string;
   siret: string;
   email: string;
+  role: 'admin' | 'user';
+  plan: BillingPlan;
+  billingStatus: BillingStatus;
 }
 
 export const SESSION_COOKIE_NAME = 'artisan_flow_session';
@@ -24,6 +28,9 @@ export const createSessionToken = async (user: SessionUser) => {
     companyName: user.companyName,
     siret: user.siret,
     email: user.email,
+    role: user.role,
+    plan: user.plan,
+    billingStatus: user.billingStatus,
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
@@ -39,12 +46,15 @@ export const verifySessionToken = async (token: string): Promise<SessionUser | n
     const companyName = typeof payload.companyName === 'string' ? payload.companyName : '';
     const siret = typeof payload.siret === 'string' ? payload.siret : '';
     const email = typeof payload.email === 'string' ? payload.email : '';
+    const role = payload.role === 'admin' ? 'admin' : 'user';
+    const plan = parsePlan(typeof payload.plan === 'string' ? payload.plan : undefined);
+    const billingStatus = parseBillingStatus(typeof payload.billingStatus === 'string' ? payload.billingStatus : undefined);
 
     if (!id || !companyName || !email) {
       return null;
     }
 
-    return { id, companyName, siret, email };
+    return { id, companyName, siret, email, role, plan, billingStatus };
   } catch {
     return null;
   }

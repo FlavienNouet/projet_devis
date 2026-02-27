@@ -1,5 +1,4 @@
-import { promises as fs } from 'fs';
-import path from 'path';
+import { prisma } from '@/lib/prisma';
 
 export interface StoredClient {
   id: string;
@@ -11,41 +10,31 @@ export interface StoredClient {
   createdAt: string;
 }
 
-const CLIENTS_FILE_PATH = path.join(process.cwd(), 'data', 'clients.json');
-
-const ensureClientsFile = async () => {
-  const directoryPath = path.dirname(CLIENTS_FILE_PATH);
-  await fs.mkdir(directoryPath, { recursive: true });
-
-  try {
-    await fs.access(CLIENTS_FILE_PATH);
-  } catch {
-    await fs.writeFile(CLIENTS_FILE_PATH, '[]', 'utf8');
-  }
-};
-
-const readClients = async (): Promise<StoredClient[]> => {
-  await ensureClientsFile();
-  const content = await fs.readFile(CLIENTS_FILE_PATH, 'utf8');
-
-  try {
-    const parsed = JSON.parse(content);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const writeClients = async (clients: StoredClient[]) => {
-  await ensureClientsFile();
-  await fs.writeFile(CLIENTS_FILE_PATH, JSON.stringify(clients, null, 2), 'utf8');
-};
+const toStoredClient = (client: {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  phone: string;
+  notes: string;
+  createdAt: Date;
+}): StoredClient => ({
+  id: client.id,
+  userId: client.userId,
+  name: client.name,
+  email: client.email,
+  phone: client.phone,
+  notes: client.notes,
+  createdAt: client.createdAt.toISOString(),
+});
 
 export const listClientsByUser = async (userId: string): Promise<StoredClient[]> => {
-  const clients = await readClients();
-  return clients
-    .filter((client) => client.userId === userId)
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const clients = await prisma.client.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return clients.map(toStoredClient);
 };
 
 export const findClientByNameForUser = async (
@@ -53,31 +42,39 @@ export const findClientByNameForUser = async (
   name: string
 ): Promise<StoredClient | undefined> => {
   const normalizedName = name.trim().toLowerCase();
-  const clients = await listClientsByUser(userId);
-  return clients.find((client) => client.name.trim().toLowerCase() === normalizedName);
+  const clients = await prisma.client.findMany({ where: { userId } });
+  const client = clients.find((entry) => entry.name.trim().toLowerCase() === normalizedName);
+  return client ? toStoredClient(client) : undefined;
 };
 
 export const createClient = async (newClient: StoredClient): Promise<void> => {
-  const clients = await readClients();
-  clients.push(newClient);
-  await writeClients(clients);
+  await prisma.client.create({
+    data: {
+      id: newClient.id,
+      userId: newClient.userId,
+      name: newClient.name,
+      email: newClient.email,
+      phone: newClient.phone,
+      notes: newClient.notes,
+      createdAt: new Date(newClient.createdAt),
+    },
+  });
 };
 
 export const deleteClientByIdForUser = async (
   userId: string,
   clientId: string
 ): Promise<boolean> => {
-  const clients = await readClients();
-  const initialLength = clients.length;
+  const deleted = await prisma.client.deleteMany({
+    where: {
+      id: clientId,
+      userId,
+    },
+  });
 
-  const remainingClients = clients.filter(
-    (client) => !(client.userId === userId && client.id === clientId)
-  );
-
-  if (remainingClients.length === initialLength) {
+  if (deleted.count === 0) {
     return false;
   }
 
-  await writeClients(remainingClients);
   return true;
 };

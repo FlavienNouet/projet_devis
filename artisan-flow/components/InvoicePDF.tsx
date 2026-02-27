@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 
 interface InvoiceItem {
   designation: string;
@@ -10,6 +10,7 @@ interface InvoiceData {
   clientName: string;
   items: InvoiceItem[];
   total: number;
+  vatRate?: number;
   societe: string;
   siret?: string;
   quoteNumber?: string;
@@ -33,9 +34,12 @@ const styles = StyleSheet.create({
   totalBox: { width: 150, borderTopWidth: 2, borderTopColor: '#111827', paddingTop: 10 },
   totalText: { fontSize: 16, fontWeight: 'bold' },
   signatureSection: { marginTop: 40, borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 16 },
+  signatureColumns: { flexDirection: 'row', gap: 16 },
+  signatureBlock: { flex: 1, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 6, padding: 10, minHeight: 120 },
   signatureTitle: { fontSize: 10, color: '#6B7280', textTransform: 'uppercase', marginBottom: 8 },
-  signatureName: { fontSize: 12, fontWeight: 'bold', marginBottom: 6 },
-  signatureLine: { fontSize: 11, color: '#6B7280' },
+  signatureImage: { width: '100%', height: 72, objectFit: 'contain' },
+  signatureMissing: { fontSize: 11, color: '#6B7280' },
+  signatureLine: { fontSize: 11, color: '#6B7280', marginTop: 36 },
 });
 
 export const InvoicePDF = ({ data }: { data: InvoiceData }) => (
@@ -84,16 +88,28 @@ export const InvoicePDF = ({ data }: { data: InvoiceData }) => (
             <Text>{data.total.toLocaleString('fr-FR')} €</Text>
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-            <Text style={styles.totalText}>Total TTC</Text>
-            <Text style={styles.totalText}>{(data.total * 1.2).toLocaleString('fr-FR')} €</Text>
+            <Text style={styles.totalText}>Total TTC (TVA {(data.vatRate ?? 20).toLocaleString('fr-FR')}%)</Text>
+            <Text style={styles.totalText}>{(data.total * (1 + (data.vatRate ?? 20) / 100)).toLocaleString('fr-FR')} €</Text>
           </View>
         </View>
       </View>
 
       <View style={styles.signatureSection}>
-        <Text style={styles.signatureTitle}>Bon pour accord - signature client</Text>
-        <Text style={styles.signatureName}>{data.signatureName || 'Non renseignée'}</Text>
-        <Text style={styles.signatureLine}>Signature: ____________________________</Text>
+        <View style={styles.signatureColumns}>
+          <View style={styles.signatureBlock}>
+            <Text style={styles.signatureTitle}>Signature électronique utilisateur</Text>
+            {data.signatureName && data.signatureName.startsWith('data:image/') ? (
+              <Image src={data.signatureName} style={styles.signatureImage} />
+            ) : (
+              <Text style={styles.signatureMissing}>Non signée</Text>
+            )}
+          </View>
+
+          <View style={styles.signatureBlock}>
+            <Text style={styles.signatureTitle}>Signature client (hors plateforme)</Text>
+            <Text style={styles.signatureLine}>Signature: ______________________</Text>
+          </View>
+        </View>
       </View>
     </Page>
   </Document>

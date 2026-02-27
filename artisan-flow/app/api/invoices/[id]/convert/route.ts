@@ -26,6 +26,10 @@ export async function POST(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'Ce document est déjà une facture.' }, { status: 400 });
   }
 
+  if (sourceQuote.status === 'rejected') {
+    return NextResponse.json({ error: 'Un devis refusé ne peut pas être converti en facture.' }, { status: 409 });
+  }
+
   const existingInvoice = await findConvertedInvoiceByQuoteId(sessionUser.id, sourceQuote.id);
   if (existingInvoice) {
     return NextResponse.json({ invoice: existingInvoice, alreadyExists: true });
@@ -42,6 +46,7 @@ export async function POST(_request: Request, context: RouteContext) {
     clientName: sourceQuote.clientName,
     items: sourceQuote.items,
     total: invoiceTotal,
+    vatRate: sourceQuote.vatRate ?? 20,
     quoteNumber: invoiceNumber,
     issueDate: new Intl.DateTimeFormat('fr-FR').format(new Date()),
     status: 'sent' as const,
