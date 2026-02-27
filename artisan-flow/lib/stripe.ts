@@ -78,6 +78,37 @@ export const getPlanFromStripePriceId = (priceId: string | null | undefined): 'f
   return 'free';
 };
 
+export const resolvePlanFromStripePriceId = async (
+  stripe: Stripe,
+  priceId: string | null | undefined
+): Promise<'free' | 'pro' | 'team'> => {
+  const configuredPlan = getPlanFromStripePriceId(priceId);
+
+  if (configuredPlan !== 'free' || !priceId) {
+    return configuredPlan;
+  }
+
+  try {
+    const price = await stripe.prices.retrieve(priceId, {
+      expand: ['product'],
+    });
+
+    const productId = typeof price.product === 'string' ? price.product : price.product.id;
+
+    if (productId && process.env.STRIPE_PRODUCT_PRO && productId === process.env.STRIPE_PRODUCT_PRO) {
+      return 'pro';
+    }
+
+    if (productId && process.env.STRIPE_PRODUCT_TEAM && productId === process.env.STRIPE_PRODUCT_TEAM) {
+      return 'team';
+    }
+  } catch {
+    return 'free';
+  }
+
+  return 'free';
+};
+
 export const getAppUrlFromRequest = (request: Request) => {
   const envUrl = process.env.NEXT_PUBLIC_APP_URL;
 

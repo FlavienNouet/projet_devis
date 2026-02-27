@@ -48,7 +48,7 @@ const DEFAULT_PLAN_DEFINITIONS: PlanDefinition[] = [
     id: 'free',
     label: 'Free',
     monthlyPriceLabel: '0 € / mois',
-    maxInvoicesPerMonth: 10,
+    maxInvoicesPerMonth: 5,
     analyticsEnabled: false,
     csvExportEnabled: false,
     usersTabEnabled: false,
@@ -642,7 +642,7 @@ export default function CreateInvoice() {
   const handleDownload = useCallback(() => {
     if (!hasValidData) {
       alert('Veuillez renseigner le nom du client, au moins une prestation et votre signature électronique.');
-      return false;
+      return;
     }
 
     const runSave = async () => {
@@ -675,6 +675,33 @@ export default function CreateInvoice() {
           return;
         }
 
+        const { pdf } = await import('@react-pdf/renderer');
+        const blob = await pdf(
+          <InvoicePDF
+            data={{
+              clientName: clientName || 'Client',
+              items: items.filter(item => item.designation.trim()),
+              total,
+              societe: currentUser?.companyName || 'Société',
+              siret: currentUser?.siret || '000 000 000 00000',
+              quoteNumber,
+              issueDate,
+              documentType: 'quote',
+              vatRate,
+              signatureName: quoteSignatureDataUrl.trim(),
+            }}
+          />
+        ).toBlob();
+
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = `devis_${sanitizedClientName}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+
         await loadDashboardData();
         resetQuoteMeta();
         setQuoteSignatureDataUrl('');
@@ -686,14 +713,15 @@ export default function CreateInvoice() {
     };
 
     runSave();
-    return true;
   }, [
     clientName,
+    currentUser,
     hasValidData,
     isSavingInvoice,
     issueDate,
     items,
     loadDashboardData,
+    sanitizedClientName,
     quoteNumber,
     quoteSignatureDataUrl,
     quoteLocation,
@@ -701,6 +729,7 @@ export default function CreateInvoice() {
     quoteLocationLng,
     resetQuoteMeta,
     selectedClientId,
+    total,
     vatRate,
   ]);
 
@@ -2333,24 +2362,8 @@ export default function CreateInvoice() {
                   )}
                 </div>
 
-                <PDFDownloadLink
-                  document={
-                    <InvoicePDF
-                      data={{
-                        clientName: clientName || 'Client',
-                        items: items.filter(item => item.designation.trim()),
-                        total,
-                        societe: currentUser.companyName,
-                        siret: currentUser.siret || '000 000 000 00000',
-                        quoteNumber,
-                        issueDate,
-                        documentType: 'quote',
-                        vatRate,
-                        signatureName: quoteSignatureDataUrl.trim(),
-                      }}
-                    />
-                  }
-                  fileName={`devis_${sanitizedClientName}.pdf`}
+                <button
+                  type="button"
                   className={`
                     w-full h-16 bg-gradient-to-r from-blue-600 to-indigo-600
                     hover:from-blue-700 hover:to-indigo-700 text-white
@@ -2358,23 +2371,22 @@ export default function CreateInvoice() {
                     shadow-xl shadow-blue-200/50 hover:shadow-2xl hover:shadow-blue-300/60
                     transition-all duration-300 active:scale-[0.97] active:shadow-lg
                     disabled:from-gray-400 disabled:to-gray-500 disabled:shadow-none disabled:cursor-not-allowed disabled:scale-100
-                    ${!hasValidData ? 'opacity-50 cursor-not-allowed' : ''}
+                    ${!hasValidData || isSavingInvoice ? 'opacity-50 cursor-not-allowed' : ''}
                   `}
                   onClick={handleDownload}
+                  disabled={!hasValidData || isSavingInvoice}
                 >
-                  {({ loading }) => (
-                    <span className="flex items-center gap-3 font-bold">
-                      <Download size={24} />
-                      {loading || isSavingInvoice
-                        ? <span className="flex items-center gap-2">
-                            <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            Génération du PDF...
-                          </span>
-                        : 'Télécharger le Devis (PDF)'
-                      }
-                    </span>
-                  )}
-                </PDFDownloadLink>
+                  <span className="flex items-center gap-3 font-bold">
+                    <Download size={24} />
+                    {isSavingInvoice
+                      ? <span className="flex items-center gap-2">
+                          <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Génération du PDF...
+                        </span>
+                      : 'Télécharger le Devis (PDF)'
+                    }
+                  </span>
+                </button>
               </div>
             </>
           )}

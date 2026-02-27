@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { getStripeClient, getPlanFromStripePriceId } from '@/lib/stripe';
+import { getStripeClient, resolvePlanFromStripePriceId } from '@/lib/stripe';
 import { findUserById, findUserByStripeCustomerId, findUserByStripeSubscriptionId, updateUserBillingById } from '@/lib/user-store';
 
 type StripeBillingStatus = 'inactive' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid';
@@ -19,7 +19,8 @@ const syncSubscriptionToUser = async (subscription: Stripe.Subscription) => {
   const subscriptionId = subscription.id;
   const firstItem = subscription.items.data[0];
   const priceId = firstItem?.price?.id ?? null;
-  const plan = getPlanFromStripePriceId(priceId);
+  const stripe = getStripeClient();
+  const plan = await resolvePlanFromStripePriceId(stripe, priceId);
 
   const userByCustomer = await findUserByStripeCustomerId(customerId);
   const userBySubscription = await findUserByStripeSubscriptionId(subscriptionId);

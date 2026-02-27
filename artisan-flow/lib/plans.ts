@@ -16,7 +16,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
     id: 'free',
     label: 'Free',
     monthlyPriceLabel: '0 € / mois',
-    maxInvoicesPerMonth: 10,
+    maxInvoicesPerMonth: 5,
     analyticsEnabled: false,
     csvExportEnabled: false,
     usersTabEnabled: false,
